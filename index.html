@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Re:GLOW FITNESS トレーニング記録</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #121212; color: #eee; max-width: 480px; margin: 0 auto; min-height: 100vh; }
+  .header { background: #1a1a1a; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2a2a2a; }
+  .header-back { color: #eee; font-size: 22px; cursor: pointer; width: 28px; text-align: center; }
+  .header-title { color: #fff; font-size: 16px; font-weight: 700; flex: 1; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .pb { padding-bottom: 30px; }
+  .loading { text-align: center; padding: 40px 20px; color: #666; font-size: 14px; }
+  .loading-spinner { width: 32px; height: 32px; border: 3px solid #2a2a2a; border-top-color: #FF5A36; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .home-greeting { margin: 14px; }
+  .home-name { font-size: 17px; font-weight: 700; }
+  .home-sub { font-size: 12px; color: #888; margin-top: 2px; }
+  .add-record-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 14px; background: #FF5A36; color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .add-record-btn:active { transform: scale(0.98); }
+  .section-label { padding: 6px 16px 8px; font-size: 12px; color: #777; font-weight: 700; }
+  .log-card { background: #1c1c1c; margin: 0 14px 10px; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; cursor: pointer; }
+  .log-card-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .log-date { font-size: 13px; font-weight: 700; color: #FF5A36; }
+  .log-trainer { font-size: 11px; color: #888; }
+  .log-exercises { font-size: 13px; color: #ccc; margin-top: 6px; line-height: 1.6; }
+  .log-empty { text-align: center; color: #555; font-size: 13px; padding: 30px 0; }
+  .form-block { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 16px; border: 1px solid #262626; }
+  .form-label { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 10px; display: block; }
+  .date-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; font-size: 15px; }
+  .trainer-buttons, .satisfaction-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill-btn { padding: 10px 16px; border-radius: 99px; border: 1.5px solid #333; background: #111; color: #ccc; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .pill-btn.selected { background: #FF5A36; border-color: #FF5A36; color: #fff; }
+  .star-btn { font-size: 26px; cursor: pointer; color: #333; }
+  .star-btn.filled { color: #FFC94A; }
+  .exercise-card { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; }
+  .exercise-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .exercise-name { font-size: 15px; font-weight: 700; color: #fff; }
+  .exercise-remove { color: #888; font-size: 12px; padding: 4px 8px; cursor: pointer; }
+  .set-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #262626; }
+  .set-row:first-of-type { border-top: none; }
+  .set-num { font-size: 12px; color: #666; width: 20px; }
+  .set-field { display: flex; align-items: center; gap: 4px; }
+  .stepper-btn { width: 26px; height: 26px; border-radius: 8px; background: #262626; border: none; color: #eee; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .set-value { width: 52px; text-align: center; font-size: 14px; font-weight: 700; color: #fff; }
+  .set-unit { font-size: 10px; color: #666; }
+  .set-del { color: #666; font-size: 16px; padding: 2px 6px; cursor: pointer; margin-left: auto; }
+  .add-set-btn { margin-top: 8px; padding: 8px; text-align: center; font-size: 12px; color: #FF5A36; font-weight: 700; cursor: pointer; border: 1.5px dashed #FF5A36; border-radius: 10px; }
+  .add-exercise-btn { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 14px; padding: 14px; border: 1.5px dashed #444; border-radius: 14px; color: #999; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .memo-input { width: 100%; min-height: 70px; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; font-size: 14px; resize: vertical; font-family: inherit; }
+  .submit-btn { display: block; margin: 20px 14px 0; background: #FF5A36; color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 15px; font-weight: 700; width: calc(100% - 28px); cursor: pointer; }
+  .submit-btn:disabled { background: #333; color: #666; }
+  .bodypart-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 14px 4px; }
+  .bodypart-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 99px; background: #1c1c1c; border: 1px solid #333; color: #999; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .bodypart-tab.active { background: #FF5A36; border-color: #FF5A36; color: #fff; }
+  .exercise-list { padding: 8px 14px; }
+  .exercise-option { background: #1c1c1c; border: 1px solid #262626; border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #eee; cursor: pointer; }
+  .exercise-option:active { background: #262626; }
+  .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #262626; font-size: 13px; }
+  .detail-row:first-of-type { border-top: none; }
+  .error-box { margin: 14px; background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 12px; padding: 16px; font-size: 13px; color: #e78; line-height: 1.7; text-align: center; }
+  .delete-log-btn { display: block; margin: 18px 14px 0; background: none; border: 1.5px solid #4a2a2a; color: #e74c3c; border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; width: calc(100% - 28px); cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-back" id="header-back" onclick="goBack()" style="visibility:hidden;">‹</div>
+  <div class="header-title" id="header-title">トレーニング記録</div>
+</div>
+
+<div class="screen active" id="screen-home">
+  <div class="loading" id="home-loading"><div class="loading-spinner"></div>読み込み中...</div>
+  <div id="home-content" style="display:none;">
+    <div class="home-greeting">
+      <div class="home-name" id="user-name"></div>
+      <div class="home-sub">今日もお疲れさまです</div>
+    </div>
+    <div class="add-record-btn" onclick="startNewRecord()">＋ 記録を追加</div>
+    <div class="section-label">最近の記録</div>
+    <div id="recent-list"></div>
+  </div>
+  <div id="no-customer-box" style="display:none;"></div>
+  <div class="pb"></div>
+</div>
+
+<div class="screen" id="screen-record">
+  <div class="form-block">
+    <span class="form-label">日付</span>
+    <input class="date-input" type="date" id="record-date">
+  </div>
+  <div class="form-block">
+    <span class="form-label">担当トレーナー（任意）</span>
+    <div class="trainer-buttons" id="trainer-buttons"></div>
+  </div>
+  <div class="section-label">種目</div>
+  <div id="exercise-cards"></div>
+  <div class="add-exercise-btn" onclick="goScreen('screen-picker')">＋ 種目を追加</div>
+  <div class="form-block">
+    <span class="form-label">今回の満足度</span>
+    <div class="satisfaction-buttons" id="satisfaction-buttons"></div>
+  </div>
+  <div class="form-block">
+    <span class="form-label">メモ（任意）</span>
+    <textarea class="memo-input" id="memo-input" placeholder="体調やフォームの気づきなど"></textarea>
+  </div>
+  <button class="submit-btn" id="submit-btn" onclick="submitRecord()">この内容で記録する</button>
+  <div class="pb"></div>
+</div>
+
+<div class="screen" id="screen-picker">
+  <div class="bodypart-tabs" id="bodypart-tabs"></div>
+  <div class="exercise-list" id="exercise-list"></div>
+  <div class="pb"></div>
+</div>
+
+<div class="screen" id="screen-history">
+  <div id="history-content"><div class="loading"><div class="loading-spinner"></div>読み込み中...</div></div>
+  <div class="pb"></div>
+</div>
+
+<div class="screen" id="screen-detail">
+  <div id="detail-content"></div>
+  <div class="pb"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
+const LIFF_ID = '2009580897-BbRA5Zr4';
+
+let sbClient = null;
+let lineProfile = null;
+let currentCustomer = null;
+let exerciseMaster = [];   // [{id,name,body_part,sort_order}]
+let bodyPartGroups = {};   // {胸:[...], 背中:[...]}
+let staffList = [];        // [{id,name,nickname}]
+let recentLogs = [];       // for home
+let historyLogs = [];      // for history screen
+
+let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
+let selectedTrainer = null;
+let selectedSatisfaction = null;
+let screenHistoryStack = [];
+
+function todayStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function init(){
+  sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (liff.isLoggedIn()) {
+      lineProfile = await liff.getProfile();
+    } else {
+      liff.login();
+      return;
+    }
+  } catch(e) {
+    document.getElementById('home-loading').innerHTML = '<div style="padding:40px 20px;text-align:center;color:#888;font-size:15px;line-height:1.8;">このページはLINEアプリ内でご利用ください。</div>';
+    return;
+  }
+
+  const { data: customerData } = await sbClient.from('customers').select('*').eq('line_user_id', lineProfile.userId).maybeSingle();
+  if (!customerData) {
+    document.getElementById('home-loading').style.display = 'none';
+    const box = document.getElementById('no-customer-box');
+    box.style.display = 'block';
+    box.innerHTML = '<div class="error-box">会員登録が確認できませんでした。<br>先に予約アプリでLINE連携をお願いします。</div>';
+    return;
+  }
+  currentCustomer = customerData;
+
+  const [{ data: exData }, { data: stData }] = await Promise.all([
+    sbClient.from('exercise_master').select('*').eq('is_active', true).order('body_part').order('sort_order'),
+    sbClient.from('staff').select('id,name,nickname').eq('is_active', true).order('name')
+  ]);
+  exerciseMaster = exData || [];
+  staffList = stData || [];
+  bodyPartGroups = {};
+  for (const ex of exerciseMaster) {
+    if (!bodyPartGroups[ex.body_part]) bodyPartGroups[ex.body_part] = [];
+    bodyPartGroups[ex.body_part].push(ex);
+  }
+
+  document.getElementById('home-loading').style.display = 'none';
+  document.getElementById('home-content').style.display = 'block';
+  document.getElementById('user-name').textContent = (currentCustomer.name || '') + ' さん';
+
+  await loadRecent();
+}
+
+async function loadRecent(){
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(5);
+  recentLogs = data || [];
+  renderRecent();
+}
+
+function renderRecent(){
+  const el = document.getElementById('recent-list');
+  if (!recentLogs.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
+  el.innerHTML = recentLogs.map(l => logCardHtml(l)).join('') +
+    '<div style="text-align:center;padding:14px 0;"><span style="color:#FF5A36;font-size:13px;font-weight:700;cursor:pointer;" onclick="openHistory()">すべての記録を見る ›</span></div>';
+}
+
+function logCardHtml(l){
+  const names = (l.exercises || []).map(e => e.name).join('・') || '（種目なし）';
+  const d = new Date(l.log_date + 'T00:00:00');
+  const dn = ['日','月','火','水','木','金','土'];
+  const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  return `<div class="log-card" onclick="openDetail('${l.id}')">
+    <div class="log-card-top"><span class="log-date">${dateStr}</span><span class="log-trainer">${l.trainer_name ? '担当: '+l.trainer_name : ''}</span></div>
+    <div class="log-exercises">${names}</div>
+  </div>`;
+}
+
+function openHistory(){
+  goScreen('screen-history');
+}
+
+async function loadHistory(){
+  const el = document.getElementById('history-content');
+  el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>読み込み中...</div>';
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(50);
+  historyLogs = data || [];
+  if (!historyLogs.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
+  el.innerHTML = historyLogs.map(l => logCardHtml(l)).join('');
+}
+
+function openDetail(id){
+  const l = [...recentLogs, ...historyLogs].find(x => x.id === id);
+  if (!l) return;
+  renderDetail(l);
+  goScreen('screen-detail');
+}
+
+function renderDetail(l){
+  const d = new Date(l.log_date + 'T00:00:00');
+  const dn = ['日','月','火','水','木','金','土'];
+  const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+  let exHtml = '';
+  for (const ex of (l.exercises || [])) {
+    const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
+    exHtml += `<div class="exercise-card" style="cursor:default;">
+      <div class="exercise-card-top"><span class="exercise-name">${ex.name}</span></div>
+      <div style="font-size:13px;color:#ccc;line-height:1.9;">${setsStr}</div>
+    </div>`;
+  }
+  document.getElementById('detail-content').innerHTML = `
+    <div class="form-block">
+      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
+      <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${l.trainer_name || '—'}</span></div>
+      <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#FFC94A;font-weight:700;">${stars}</span></div>
+    </div>
+    ${exHtml}
+    ${l.memo ? `<div class="form-block"><span class="form-label">メモ</span><div style="font-size:13px;color:#ccc;line-height:1.7;">${l.memo}</div></div>` : ''}
+    <button class="delete-log-btn" onclick="deleteLog('${l.id}')">この記録を削除する</button>
+  `;
+}
+
+async function deleteLog(id){
+  if (!confirm('この記録を削除しますか？元に戻せません。')) return;
+  const { error } = await sbClient.from('training_logs').delete().eq('id', id).eq('customer_id', currentCustomer.id);
+  if (error) { alert('削除に失敗しました'); return; }
+  goBack();
+  await loadRecent();
+  await loadHistory();
+}
+
+// ===== 新規記録フォーム =====
+function startNewRecord(){
+  selectedExercises = [];
+  selectedTrainer = null;
+  selectedSatisfaction = null;
+  document.getElementById('record-date').value = todayStr();
+  document.getElementById('record-date').max = todayStr();
+  document.getElementById('memo-input').value = '';
+  renderTrainerButtons();
+  renderSatisfactionButtons();
+  renderExerciseCards();
+  goScreen('screen-record');
+}
+
+function renderTrainerButtons(){
+  const el = document.getElementById('trainer-buttons');
+  const names = staffList.map(s => s.nickname || s.name);
+  el.innerHTML = names.map(n => `<div class="pill-btn${selectedTrainer===n?' selected':''}" onclick="selectTrainer('${n}')">${n}</div>`).join('') +
+    `<div class="pill-btn${selectedTrainer===null?' selected':''}" onclick="selectTrainer(null)">選択なし</div>`;
+}
+function selectTrainer(name){ selectedTrainer = name; renderTrainerButtons(); }
+
+function renderSatisfactionButtons(){
+  const el = document.getElementById('satisfaction-buttons');
+  let html = '';
+  for (let i = 1; i <= 5; i++) {
+    html += `<span class="star-btn${selectedSatisfaction>=i?' filled':''}" onclick="selectSatisfaction(${i})">★</span>`;
+  }
+  el.innerHTML = html;
+}
+function selectSatisfaction(n){ selectedSatisfaction = n; renderSatisfactionButtons(); }
+
+function renderExerciseCards(){
+  const el = document.getElementById('exercise-cards');
+  if (!selectedExercises.length) { el.innerHTML = ''; checkSubmitEnabled(); return; }
+  el.innerHTML = selectedExercises.map((ex, exIdx) => {
+    const setsHtml = ex.sets.map((s, sIdx) => `
+      <div class="set-row">
+        <span class="set-num">${sIdx+1}</span>
+        <div class="set-field">
+          <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'weight',-2.5)">－</button>
+          <span class="set-value">${s.weight}</span>
+          <span class="set-unit">kg</span>
+          <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'weight',2.5)">＋</button>
+        </div>
+        <div class="set-field">
+          <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'reps',-1)">－</button>
+          <span class="set-value">${s.reps}</span>
+          <span class="set-unit">回</span>
+          <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'reps',1)">＋</button>
+        </div>
+        <span class="set-del" onclick="removeSet(${exIdx},${sIdx})">✕</span>
+      </div>
+    `).join('');
+    return `<div class="exercise-card">
+      <div class="exercise-card-top">
+        <span class="exercise-name">${ex.name}</span>
+        <span class="exercise-remove" onclick="removeExercise(${exIdx})">種目を削除</span>
+      </div>
+      ${setsHtml}
+      <div class="add-set-btn" onclick="addSet(${exIdx})">＋ セット追加</div>
+    </div>`;
+  }).join('');
+  checkSubmitEnabled();
+}
+
+function addExercise(exercise){
+  selectedExercises.push({ exercise_id: exercise.id, name: exercise.name, sets: [{ weight: 20, reps: 10 }] });
+  renderExerciseCards();
+  goBack();
+}
+function removeExercise(idx){
+  selectedExercises.splice(idx, 1);
+  renderExerciseCards();
+}
+function addSet(exIdx){
+  const sets = selectedExercises[exIdx].sets;
+  const last = sets[sets.length - 1] || { weight: 20, reps: 10 };
+  sets.push({ weight: last.weight, reps: last.reps });
+  renderExerciseCards();
+}
+function removeSet(exIdx, sIdx){
+  const sets = selectedExercises[exIdx].sets;
+  if (sets.length <= 1) { removeExercise(exIdx); return; }
+  sets.splice(sIdx, 1);
+  renderExerciseCards();
+}
+function adjustSet(exIdx, sIdx, field, delta){
+  const s = selectedExercises[exIdx].sets[sIdx];
+  let v = s[field] + delta;
+  if (field === 'weight') { v = Math.max(0, Math.round(v * 10) / 10); }
+  else { v = Math.max(0, v); }
+  s[field] = v;
+  renderExerciseCards();
+}
+
+function checkSubmitEnabled(){
+  document.getElementById('submit-btn').disabled = selectedExercises.length === 0;
+}
+
+async function submitRecord(){
+  const btn = document.getElementById('submit-btn');
+  const date = document.getElementById('record-date').value;
+  if (!date) { alert('日付を選択してください'); return; }
+  if (!selectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
+  btn.disabled = true; btn.textContent = '送信中...';
+  const { error } = await sbClient.from('training_logs').insert({
+    customer_id: currentCustomer.id,
+    log_date: date,
+    trainer_name: selectedTrainer,
+    exercises: selectedExercises.map(e => ({ exercise_id: e.exercise_id, name: e.name, sets: e.sets })),
+    memo: document.getElementById('memo-input').value.trim() || null,
+    satisfaction_score: selectedSatisfaction
+  });
+  btn.disabled = false; btn.textContent = 'この内容で記録する';
+  if (error) { alert('記録に失敗しました。もう一度お試しください。'); return; }
+  await loadRecent();
+  goHome();
+}
+
+// ===== 種目ピッカー =====
+let activeBodyPart = null;
+function openPicker(){
+  const parts = Object.keys(bodyPartGroups);
+  if (!activeBodyPart || !parts.includes(activeBodyPart)) activeBodyPart = parts[0];
+  renderBodyPartTabs();
+  renderExerciseList();
+}
+function renderBodyPartTabs(){
+  const el = document.getElementById('bodypart-tabs');
+  el.innerHTML = Object.keys(bodyPartGroups).map(bp =>
+    `<div class="bodypart-tab${bp===activeBodyPart?' active':''}" onclick="selectBodyPart('${bp}')">${bp}</div>`
+  ).join('');
+}
+function selectBodyPart(bp){ activeBodyPart = bp; renderBodyPartTabs(); renderExerciseList(); }
+function renderExerciseList(){
+  const el = document.getElementById('exercise-list');
+  const list = bodyPartGroups[activeBodyPart] || [];
+  el.innerHTML = list.map(ex => `<div class="exercise-option" onclick='addExercise(${JSON.stringify(ex)})'>${ex.name}</div>`).join('');
+}
+
+// ===== 画面遷移 =====
+function goScreen(id){
+  const cur = document.querySelector('.screen.active');
+  if (cur) screenHistoryStack.push(cur.id);
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  updateHeader(id);
+  if (id === 'screen-picker') openPicker();
+  if (id === 'screen-history') loadHistory();
+  window.scrollTo(0,0);
+}
+function goBack(){
+  if (screenHistoryStack.length > 0) {
+    const prev = screenHistoryStack.pop();
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(prev).classList.add('active');
+    updateHeader(prev);
+    window.scrollTo(0,0);
+  }
+}
+function goHome(){
+  screenHistoryStack = [];
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-home').classList.add('active');
+  updateHeader('screen-home');
+  window.scrollTo(0,0);
+}
+function updateHeader(id){
+  const titles = { 'screen-home':'トレーニング記録', 'screen-record':'記録を追加', 'screen-picker':'種目を選ぶ', 'screen-history':'記録一覧', 'screen-detail':'記録の詳細' };
+  document.getElementById('header-title').textContent = titles[id] || 'トレーニング記録';
+  document.getElementById('header-back').style.visibility = id === 'screen-home' ? 'hidden' : 'visible';
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
