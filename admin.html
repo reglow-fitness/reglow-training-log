@@ -176,6 +176,9 @@
 const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
 
+// 部位の固定表示順（この配列にない部位は末尾に五十音順で追加される）
+const BODYPART_ORDER = ['胸', '背中', '肩', '脚', '腕', '腹', 'その他'];
+
 let sbClient = null;
 let allCustomers = [];
 let currentCustomer = null;
@@ -437,7 +440,7 @@ function closeDetailModal(){
 
 // ===== 種目マスター管理 =====
 async function loadExerciseMaster(){
-  const { data } = await sbClient.from('exercise_master').select('*').order('body_part').order('sort_order');
+  const { data } = await sbClient.from('exercise_master').select('*');
   exerciseMaster = data || [];
   renderExerciseMaster();
 }
@@ -446,11 +449,19 @@ function renderExerciseMaster(){
   const el = document.getElementById('exercise-master-list');
   if (!exerciseMaster.length) { el.innerHTML = '<div class="empty-msg">種目が登録されていません</div>'; return; }
   const groups = {};
-  const order = [];
   for (const ex of exerciseMaster) {
-    if (!groups[ex.body_part]) { groups[ex.body_part] = []; order.push(ex.body_part); }
+    if (!groups[ex.body_part]) groups[ex.body_part] = [];
     groups[ex.body_part].push(ex);
   }
+  // ★ 各部位内は種目名の五十音順にソート
+  for (const bp in groups) {
+    groups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  }
+  // ★ 部位の並び順は固定順（BODYPART_ORDER）→ 未知の部位は末尾に五十音順で追加
+  const knownParts = BODYPART_ORDER.filter(bp => groups[bp]);
+  const unknownParts = Object.keys(groups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
+  const order = [...knownParts, ...unknownParts];
+
   let html = '';
   for (const bp of order) {
     html += `<div class="bodypart-section-title">${bp}</div>`;
@@ -470,8 +481,7 @@ async function addExercise(){
   const name = document.getElementById('new-ex-name').value.trim();
   const bodyPart = document.getElementById('new-ex-bodypart').value;
   if (!name) { alert('種目名を入力してください'); return; }
-  const maxSort = Math.max(0, ...exerciseMaster.filter(e => e.body_part === bodyPart).map(e => e.sort_order || 0));
-  const { error } = await sbClient.from('exercise_master').insert({ name, body_part: bodyPart, sort_order: maxSort + 1 });
+  const { error } = await sbClient.from('exercise_master').insert({ name, body_part: bodyPart });
   if (error) { alert('追加に失敗しました'); return; }
   document.getElementById('new-ex-name').value = '';
   await loadExerciseMaster();
