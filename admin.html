@@ -29,6 +29,12 @@
 
   /* 会員別記録 */
   .search-box { width: 100%; padding: 12px 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; margin-bottom: 12px; background: white; }
+  .alpha-index-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+  .alpha-index-chip { font-size: 11px; font-weight: 700; color: #555; background: white; border: 1px solid #ddd; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  .alpha-index-chip:hover { background: #f0f0f0; }
+  .alpha-section-badge { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: #1a1a1a; color: white; font-size: 13px; font-weight: 700; margin-right: 8px; flex-shrink: 0; }
+  .alpha-section-title { display: flex; align-items: center; margin: 18px 0 8px; }
+  .alpha-section-title:first-child { margin-top: 0; }
   .customer-row { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 6px; cursor: pointer; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
   .customer-row:hover { background: #fafafa; }
   .customer-name { font-size: 14px; font-weight: 700; }
@@ -105,6 +111,7 @@
     <div id="panel-customers">
       <div id="customer-list-view">
         <input class="search-box" id="customer-search" placeholder="会員名で検索" oninput="renderCustomerList()">
+        <div class="alpha-index-bar" id="alpha-index-bar"></div>
         <div id="customer-list"><div class="loading">読み込み中...</div></div>
       </div>
       <div id="customer-detail-view" style="display:none;">
@@ -157,6 +164,38 @@ let currentCustomer = null;
 let currentCustomerLogs = [];
 let exerciseMaster = [];
 
+// 五十音の行見出し（濁点・半濁点・小文字などはこの範囲に丸め込む）
+const GOJUON_ROWS = [
+  { label: 'あ', chars: 'あいうえおぁぃぅぇぉ' },
+  { label: 'か', chars: 'かきくけこがぎぐげご' },
+  { label: 'さ', chars: 'さしすせそざじずぜぞ' },
+  { label: 'た', chars: 'たちつてとだぢづでどっ' },
+  { label: 'な', chars: 'なにぬねの' },
+  { label: 'は', chars: 'はひふへほばびぶべぼぱぴぷぺぽ' },
+  { label: 'ま', chars: 'まみむめも' },
+  { label: 'や', chars: 'やゆよゃゅょ' },
+  { label: 'ら', chars: 'らりるれろ' },
+  { label: 'わ', chars: 'わをんゎ' },
+];
+
+// カタカナ・漢字などをできる範囲でひらがな判定するための簡易カタカナ→ひらがな変換
+function toHiraganaChar(ch){
+  const code = ch.charCodeAt(0);
+  if (code >= 0x30A1 && code <= 0x30F6) { // カタカナ範囲
+    return String.fromCharCode(code - 0x60);
+  }
+  return ch;
+}
+
+function getGojuonLabel(name){
+  if (!name) return '#';
+  const first = toHiraganaChar(name.trim()[0]);
+  for (const row of GOJUON_ROWS) {
+    if (row.chars.includes(first)) return row.label;
+  }
+  return '#'; // 漢字・アルファベット等、判定できないものはまとめて#
+}
+
 async function init(){
   sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const { data: { session } } = await sbClient.auth.getSession();
@@ -205,17 +244,47 @@ async function loadCustomers(){
 
 function renderCustomerList(){
   const kw = document.getElementById('customer-search').value.trim();
-  const el = document.getElementById('customer-list');
+  const listEl = document.getElementById('customer-list');
+  const barEl = document.getElementById('alpha-index-bar');
   const filtered = kw ? allCustomers.filter(c => (c.name||'').includes(kw)) : allCustomers;
-  if (!filtered.length) { el.innerHTML = '<div class="empty-msg">該当する会員がいません</div>'; return; }
-  el.innerHTML = filtered.map(c => `
-    <div class="customer-row" onclick="openCustomerDetail('${c.id}')">
-      <div>
-        <div class="customer-name">${c.name || '（名前未設定）'}</div>
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="empty-msg">該当する会員がいません</div>';
+    barEl.innerHTML = '';
+    return;
+  }
+
+  // 行ごとにグループ化（元々name順で取得済みなので、グループ内の順序は維持される）
+  const groups = {};
+  const groupOrder = [];
+  for (const c of filtered) {
+    const label = getGojuonLabel(c.name);
+    if (!groups[label]) { groups[label] = []; groupOrder.push(label); }
+    groups[label].push(c);
+  }
+
+  // ページ上部のインデックスチップ（存在する行のみ表示）
+  barEl.innerHTML = groupOrder.map(label =>
+    `<div class="alpha-index-chip" onclick="scrollToAlphaGroup('${label}')">${label}</div>`
+  ).join('');
+
+  let html = '';
+  for (const label of groupOrder) {
+    html += `<div class="alpha-section-title" id="alpha-group-${label}"><span class="alpha-section-badge">${label}</span></div>`;
+    html += groups[label].map(c => `
+      <div class="customer-row" onclick="openCustomerDetail('${c.id}')">
+        <div>
+          <div class="customer-name">${c.name || '（名前未設定）'}</div>
+        </div>
+        ${c.is_blocked ? '<span class="blocked-badge">ブロック中</span>' : ''}
       </div>
-      ${c.is_blocked ? '<span class="blocked-badge">ブロック中</span>' : ''}
-    </div>
-  `).join('');
+    `).join('');
+  }
+  listEl.innerHTML = html;
+}
+
+function scrollToAlphaGroup(label){
+  const el = document.getElementById('alpha-group-' + label);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function openCustomerDetail(customerId){
