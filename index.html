@@ -221,6 +221,16 @@ async function init(){
     box.innerHTML = '<div class="error-box">会員登録が確認できませんでした。<br>先に予約アプリでLINE連携をお願いします。</div>';
     return;
   }
+
+  // ★ ブロックされた会員は利用不可（予約システムと同じ扱い）
+  if (customerData.is_blocked) {
+    document.getElementById('home-loading').style.display = 'none';
+    const box = document.getElementById('no-customer-box');
+    box.style.display = 'block';
+    box.innerHTML = '<div class="error-box">現在このアカウントはご利用いただけません。<br>詳しくはスタッフまでお問い合わせください。</div>';
+    return;
+  }
+
   currentCustomer = customerData;
 
   const [{ data: exData }, { data: stData }] = await Promise.all([
