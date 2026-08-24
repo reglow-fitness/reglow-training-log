@@ -46,8 +46,9 @@
   .set-row:first-of-type { border-top: none; }
   .set-num { font-size: 13px; color: #666; width: 20px; }
   .set-field { display: flex; align-items: center; gap: 6px; }
-  .stepper-btn { width: 32px; height: 32px; border-radius: 8px; background: #262626; border: none; color: #eee; font-size: 17px; font-weight: 700; cursor: pointer; }
-  .set-value { width: 60px; text-align: center; font-size: 20px; font-weight: 700; color: #fff; }
+  .stepper-btn { width: 32px; height: 32px; border-radius: 8px; background: #262626; border: none; color: #eee; font-size: 17px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+  .set-value-input { width: 56px; text-align: center; font-size: 20px; font-weight: 700; color: #fff; background: #111; border: 1px solid #333; border-radius: 8px; padding: 5px 2px; font-family: inherit; }
+  .set-value-input::-webkit-outer-spin-button, .set-value-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .set-unit { font-size: 12px; color: #888; }
   .set-del { color: #666; font-size: 16px; padding: 2px 6px; cursor: pointer; margin-left: auto; }
   .add-set-btn { margin-top: 8px; padding: 8px; text-align: center; font-size: 12px; color: #FF5A36; font-weight: 700; cursor: pointer; border: 1.5px dashed #FF5A36; border-radius: 10px; }
@@ -315,13 +316,17 @@ function renderExerciseCards(){
         <span class="set-num">${sIdx+1}</span>
         <div class="set-field">
           <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'weight',-2.5)">－</button>
-          <span class="set-value">${s.weight}</span>
+          <input class="set-value-input" type="text" inputmode="decimal" value="${s.weight}"
+            onfocus="this.select()"
+            onchange="setValueFromInput(${exIdx},${sIdx},'weight',this.value)">
           <span class="set-unit">kg</span>
           <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'weight',2.5)">＋</button>
         </div>
         <div class="set-field">
           <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'reps',-1)">－</button>
-          <span class="set-value">${s.reps}</span>
+          <input class="set-value-input" type="text" inputmode="numeric" value="${s.reps}"
+            onfocus="this.select()"
+            onchange="setValueFromInput(${exIdx},${sIdx},'reps',this.value)">
           <span class="set-unit">回</span>
           <button class="stepper-btn" onclick="adjustSet(${exIdx},${sIdx},'reps',1)">＋</button>
         </div>
@@ -367,6 +372,14 @@ function adjustSet(exIdx, sIdx, field, delta){
   if (field === 'weight') { v = Math.max(0, Math.round(v * 10) / 10); }
   else { v = Math.max(0, v); }
   s[field] = v;
+  renderExerciseCards();
+}
+function setValueFromInput(exIdx, sIdx, field, rawValue){
+  let v = parseFloat(rawValue.replace(/[^0-9.]/g, ''));
+  if (isNaN(v) || v < 0) v = 0;
+  if (field === 'weight') { v = Math.round(v * 10) / 10; }
+  else { v = Math.round(v); }
+  selectedExercises[exIdx].sets[sIdx][field] = v;
   renderExerciseCards();
 }
 
