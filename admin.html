@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Re:GLOW FITNESS トレーニング記録 管理画面</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #f2f2f2; color: #111; }
+  .header { background: #1a1a1a; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .header-title { color: #fff; font-size: 16px; font-weight: 700; }
+  .header-logout { color: #999; font-size: 12px; cursor: pointer; }
+  .container { max-width: 900px; margin: 0 auto; padding: 16px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* ログイン画面 */
+  .login-wrap { max-width: 340px; margin: 80px auto; background: white; border-radius: 14px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .login-title { font-size: 16px; font-weight: 700; margin-bottom: 20px; text-align: center; }
+  .login-input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 12px; }
+  .login-btn { width: 100%; padding: 12px; background: #FF5A36; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .login-error { color: #e74c3c; font-size: 12px; margin-top: 8px; text-align: center; }
+
+  /* タブ */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn { padding: 10px 18px; border-radius: 10px; border: 1px solid #ddd; background: white; font-size: 13px; font-weight: 700; color: #555; cursor: pointer; }
+  .tab-btn.active { background: #1a1a1a; color: white; border-color: #1a1a1a; }
+
+  /* 会員別記録 */
+  .search-box { width: 100%; padding: 12px 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; margin-bottom: 12px; background: white; }
+  .customer-row { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 6px; cursor: pointer; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .customer-row:hover { background: #fafafa; }
+  .customer-name { font-size: 14px; font-weight: 700; }
+  .customer-meta { font-size: 11px; color: #999; }
+  .blocked-badge { font-size: 10px; background: #ffe0e0; color: #c0392b; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
+
+  .back-link { color: #FF5A36; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 12px; display: inline-block; }
+  .customer-detail-header { background: white; border-radius: 12px; padding: 16px; margin-bottom: 14px; border: 1px solid #eee; }
+  .customer-detail-name { font-size: 17px; font-weight: 700; }
+
+  .log-card { background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border: 1px solid #eee; cursor: pointer; }
+  .log-card:hover { background: #fafafa; }
+  .log-card-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .log-date { font-size: 13px; font-weight: 700; color: #FF5A36; }
+  .log-trainer { font-size: 11px; color: #999; }
+  .log-exercises { font-size: 13px; color: #444; margin-top: 6px; }
+  .log-satisfaction { font-size: 12px; color: #d99a00; margin-top: 4px; }
+
+  .detail-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; }
+  .detail-modal-bg.active { display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .detail-modal { background: white; border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .detail-modal-close { text-align: right; color: #999; font-size: 13px; cursor: pointer; margin-bottom: 8px; }
+  .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #f0f0f0; font-size: 13px; }
+  .detail-row:first-of-type { border-top: none; }
+  .ex-block { background: #f7f7f7; border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+  .ex-block-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .ex-block-sets { font-size: 13px; color: #444; line-height: 1.8; }
+  .memo-block { background: #fff8e1; border-radius: 10px; padding: 12px 14px; margin-top: 10px; font-size: 13px; color: #6a5000; line-height: 1.6; }
+
+  .empty-msg { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
+  .loading { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
+
+  /* 種目マスター管理 */
+  .add-exercise-form { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #eee; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 11px; color: #888; font-weight: 700; }
+  .form-group input, .form-group select { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; }
+  .add-btn { padding: 9px 18px; background: #FF5A36; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+  .bodypart-section-title { font-size: 13px; font-weight: 700; color: #888; margin: 16px 0 8px; }
+  .exercise-row { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; border: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
+  .exercise-row.inactive { opacity: 0.5; }
+  .exercise-row-name { flex: 1; font-size: 13px; font-weight: 600; }
+  .exercise-row-name input { width: 100%; border: none; background: transparent; font-size: 13px; font-weight: 600; }
+  .exercise-row-name input:focus { outline: 1px solid #FF5A36; border-radius: 4px; padding: 2px 4px; }
+  .exercise-row-btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; color: #666; }
+  .exercise-row-btn.danger { color: #e74c3c; border-color: #f5c6c6; }
+</style>
+</head>
+<body>
+
+<div class="screen active" id="screen-login">
+  <div class="login-wrap">
+    <div class="login-title">トレーニング記録 管理画面</div>
+    <input class="login-input" type="email" id="login-email" placeholder="メールアドレス">
+    <input class="login-input" type="password" id="login-password" placeholder="パスワード">
+    <button class="login-btn" onclick="doLogin()">ログイン</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-main">
+  <div class="header">
+    <div class="header-title">Re:GLOW FITNESS トレーニング記録</div>
+    <div class="header-logout" onclick="doLogout()">ログアウト</div>
+  </div>
+  <div class="container">
+    <div class="tabs">
+      <div class="tab-btn active" id="tab-customers" onclick="switchTab('customers')">会員別記録</div>
+      <div class="tab-btn" id="tab-exercises" onclick="switchTab('exercises')">種目マスター管理</div>
+    </div>
+
+    <!-- 会員別記録タブ -->
+    <div id="panel-customers">
+      <div id="customer-list-view">
+        <input class="search-box" id="customer-search" placeholder="会員名で検索" oninput="renderCustomerList()">
+        <div id="customer-list"><div class="loading">読み込み中...</div></div>
+      </div>
+      <div id="customer-detail-view" style="display:none;">
+        <span class="back-link" onclick="backToCustomerList()">‹ 会員一覧に戻る</span>
+        <div class="customer-detail-header">
+          <div class="customer-detail-name" id="detail-customer-name"></div>
+        </div>
+        <div id="customer-logs-list"><div class="loading">読み込み中...</div></div>
+      </div>
+    </div>
+
+    <!-- 種目マスター管理タブ -->
+    <div id="panel-exercises" style="display:none;">
+      <div class="add-exercise-form">
+        <div class="form-group">
+          <label>種目名</label>
+          <input type="text" id="new-ex-name" placeholder="例: バーベルカール">
+        </div>
+        <div class="form-group">
+          <label>部位</label>
+          <select id="new-ex-bodypart">
+            <option value="胸">胸</option>
+            <option value="背中">背中</option>
+            <option value="肩">肩</option>
+            <option value="脚">脚</option>
+            <option value="腕">腕</option>
+            <option value="腹">腹</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <button class="add-btn" onclick="addExercise()">＋ 追加</button>
+      </div>
+      <div id="exercise-master-list"><div class="loading">読み込み中...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 記録詳細モーダル -->
+<div class="detail-modal-bg" id="detail-modal-bg" onclick="if(event.target===this)closeDetailModal()">
+  <div class="detail-modal" id="detail-modal-content"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
+
+let sbClient = null;
+let allCustomers = [];
+let currentCustomer = null;
+let currentCustomerLogs = [];
+let exerciseMaster = [];
+
+async function init(){
+  sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const { data: { session } } = await sbClient.auth.getSession();
+  if (session) {
+    showMainScreen();
+  }
+}
+
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'メールアドレスとパスワードを入力してください'; return; }
+  const { error } = await sbClient.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = 'ログインに失敗しました。メールアドレスとパスワードをご確認ください。'; return; }
+  showMainScreen();
+}
+
+async function doLogout(){
+  await sbClient.auth.signOut();
+  document.getElementById('screen-main').classList.remove('active');
+  document.getElementById('screen-login').classList.add('active');
+}
+
+async function showMainScreen(){
+  document.getElementById('screen-login').classList.remove('active');
+  document.getElementById('screen-main').classList.add('active');
+  await loadCustomers();
+  await loadExerciseMaster();
+}
+
+function switchTab(tab){
+  document.getElementById('tab-customers').classList.toggle('active', tab === 'customers');
+  document.getElementById('tab-exercises').classList.toggle('active', tab === 'exercises');
+  document.getElementById('panel-customers').style.display = tab === 'customers' ? 'block' : 'none';
+  document.getElementById('panel-exercises').style.display = tab === 'exercises' ? 'block' : 'none';
+}
+
+// ===== 会員別記録 =====
+async function loadCustomers(){
+  const { data } = await sbClient.from('customers').select('id,name,is_blocked').order('name');
+  allCustomers = data || [];
+  renderCustomerList();
+}
+
+function renderCustomerList(){
+  const kw = document.getElementById('customer-search').value.trim();
+  const el = document.getElementById('customer-list');
+  const filtered = kw ? allCustomers.filter(c => (c.name||'').includes(kw)) : allCustomers;
+  if (!filtered.length) { el.innerHTML = '<div class="empty-msg">該当する会員がいません</div>'; return; }
+  el.innerHTML = filtered.map(c => `
+    <div class="customer-row" onclick="openCustomerDetail('${c.id}')">
+      <div>
+        <div class="customer-name">${c.name || '（名前未設定）'}</div>
+      </div>
+      ${c.is_blocked ? '<span class="blocked-badge">ブロック中</span>' : ''}
+    </div>
+  `).join('');
+}
+
+async function openCustomerDetail(customerId){
+  const c = allCustomers.find(x => x.id === customerId);
+  if (!c) return;
+  currentCustomer = c;
+  document.getElementById('customer-list-view').style.display = 'none';
+  document.getElementById('customer-detail-view').style.display = 'block';
+  document.getElementById('detail-customer-name').textContent = (c.name || '（名前未設定）') + (c.is_blocked ? '（ブロック中）' : '');
+  document.getElementById('customer-logs-list').innerHTML = '<div class="loading">読み込み中...</div>';
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', customerId).order('log_date', { ascending: false }).order('created_at', { ascending: false });
+  currentCustomerLogs = data || [];
+  renderCustomerLogs();
+}
+
+function renderCustomerLogs(){
+  const el = document.getElementById('customer-logs-list');
+  if (!currentCustomerLogs.length) { el.innerHTML = '<div class="empty-msg">記録がありません</div>'; return; }
+  const dn = ['日','月','火','水','木','金','土'];
+  el.innerHTML = currentCustomerLogs.map(l => {
+    const d = new Date(l.log_date + 'T00:00:00');
+    const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+    const names = (l.exercises || []).map(e => e.name).join('・') || '（種目なし）';
+    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+    return `<div class="log-card" onclick="openLogDetail('${l.id}')">
+      <div class="log-card-top"><span class="log-date">${dateStr}</span><span class="log-trainer">${l.trainer_name ? '担当: '+l.trainer_name : ''}</span></div>
+      <div class="log-exercises">${names}</div>
+      <div class="log-satisfaction">満足度: ${stars}</div>
+    </div>`;
+  }).join('');
+}
+
+function backToCustomerList(){
+  document.getElementById('customer-detail-view').style.display = 'none';
+  document.getElementById('customer-list-view').style.display = 'block';
+}
+
+function openLogDetail(logId){
+  const l = currentCustomerLogs.find(x => x.id === logId);
+  if (!l) return;
+  const dn = ['日','月','火','水','木','金','土'];
+  const d = new Date(l.log_date + 'T00:00:00');
+  const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+  const exHtml = (l.exercises || []).map(ex => {
+    const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
+    return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div><div class="ex-block-sets">${setsStr}</div></div>`;
+  }).join('');
+  document.getElementById('detail-modal-content').innerHTML = `
+    <div class="detail-modal-close" onclick="closeDetailModal()">✕ 閉じる</div>
+    <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
+    <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${l.trainer_name || '—'}</span></div>
+    <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#d99a00;font-weight:700;">${stars}</span></div>
+    ${exHtml}
+    ${l.memo ? `<div class="memo-block">${l.memo}</div>` : ''}
+  `;
+  document.getElementById('detail-modal-bg').classList.add('active');
+}
+function closeDetailModal(){
+  document.getElementById('detail-modal-bg').classList.remove('active');
+}
+
+// ===== 種目マスター管理 =====
+async function loadExerciseMaster(){
+  const { data } = await sbClient.from('exercise_master').select('*').order('body_part').order('sort_order');
+  exerciseMaster = data || [];
+  renderExerciseMaster();
+}
+
+function renderExerciseMaster(){
+  const el = document.getElementById('exercise-master-list');
+  if (!exerciseMaster.length) { el.innerHTML = '<div class="empty-msg">種目が登録されていません</div>'; return; }
+  const groups = {};
+  const order = [];
+  for (const ex of exerciseMaster) {
+    if (!groups[ex.body_part]) { groups[ex.body_part] = []; order.push(ex.body_part); }
+    groups[ex.body_part].push(ex);
+  }
+  let html = '';
+  for (const bp of order) {
+    html += `<div class="bodypart-section-title">${bp}</div>`;
+    html += groups[bp].map(ex => `
+      <div class="exercise-row${ex.is_active ? '' : ' inactive'}">
+        <div class="exercise-row-name">
+          <input type="text" value="${ex.name}" onchange="updateExerciseName('${ex.id}', this.value)">
+        </div>
+        <button class="exercise-row-btn" onclick="toggleExerciseActive('${ex.id}', ${!ex.is_active})">${ex.is_active ? '非表示にする' : '再表示する'}</button>
+      </div>
+    `).join('');
+  }
+  el.innerHTML = html;
+}
+
+async function addExercise(){
+  const name = document.getElementById('new-ex-name').value.trim();
+  const bodyPart = document.getElementById('new-ex-bodypart').value;
+  if (!name) { alert('種目名を入力してください'); return; }
+  const maxSort = Math.max(0, ...exerciseMaster.filter(e => e.body_part === bodyPart).map(e => e.sort_order || 0));
+  const { error } = await sbClient.from('exercise_master').insert({ name, body_part: bodyPart, sort_order: maxSort + 1 });
+  if (error) { alert('追加に失敗しました'); return; }
+  document.getElementById('new-ex-name').value = '';
+  await loadExerciseMaster();
+}
+
+async function updateExerciseName(id, newName){
+  newName = newName.trim();
+  if (!newName) { alert('種目名を空にはできません'); await loadExerciseMaster(); return; }
+  const { error } = await sbClient.from('exercise_master').update({ name: newName }).eq('id', id);
+  if (error) { alert('更新に失敗しました'); return; }
+  await loadExerciseMaster();
+}
+
+async function toggleExerciseActive(id, newActive){
+  const { error } = await sbClient.from('exercise_master').update({ is_active: newActive }).eq('id', id);
+  if (error) { alert('更新に失敗しました'); return; }
+  await loadExerciseMaster();
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
