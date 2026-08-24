@@ -177,11 +177,15 @@ const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
 const LIFF_ID = '2009580897-BbRA5Zr4';
 const SELF_TRAINING_LABEL = '自主トレ';
 
+// 部位の固定表示順（この配列にない部位は末尾にアルファベット/五十音順で追加される）
+const BODYPART_ORDER = ['胸', '背中', '肩', '脚', '腕', '腹', 'その他'];
+
 let sbClient = null;
 let lineProfile = null;
 let currentCustomer = null;
 let exerciseMaster = [];   // [{id,name,body_part,sort_order}]
 let bodyPartGroups = {};   // {胸:[...], 背中:[...]}
+let bodyPartOrderList = []; // 実際に表示する部位の並び順（固定順＋未知の部位）
 let staffList = [];        // [{id,name,nickname}]
 let recentLogs = [];       // for home
 let historyLogs = [];      // for history screen
@@ -234,16 +238,25 @@ async function init(){
   currentCustomer = customerData;
 
   const [{ data: exData }, { data: stData }] = await Promise.all([
-    sbClient.from('exercise_master').select('*').eq('is_active', true).order('body_part').order('sort_order'),
+    sbClient.from('exercise_master').select('*').eq('is_active', true),
     sbClient.from('staff').select('id,name,nickname').eq('is_active', true).order('name')
   ]);
   exerciseMaster = exData || [];
   staffList = stData || [];
+
+  // ★ 種目を部位ごとにグループ化し、各部位内は五十音順（ふりがなではなく種目名の文字コード順・ja localeで近似）にソート
   bodyPartGroups = {};
   for (const ex of exerciseMaster) {
     if (!bodyPartGroups[ex.body_part]) bodyPartGroups[ex.body_part] = [];
     bodyPartGroups[ex.body_part].push(ex);
   }
+  for (const bp in bodyPartGroups) {
+    bodyPartGroups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  }
+  // ★ 部位自体の並び順は固定順（BODYPART_ORDER）→ 未知の部位は末尾に五十音順で追加
+  const knownParts = BODYPART_ORDER.filter(bp => bodyPartGroups[bp]);
+  const unknownParts = Object.keys(bodyPartGroups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
+  bodyPartOrderList = [...knownParts, ...unknownParts];
 
   document.getElementById('home-loading').style.display = 'none';
   document.getElementById('home-content').style.display = 'block';
@@ -492,14 +505,13 @@ async function submitRecord(){
 // ===== 種目ピッカー =====
 let activeBodyPart = null;
 function openPicker(){
-  const parts = Object.keys(bodyPartGroups);
-  if (!activeBodyPart || !parts.includes(activeBodyPart)) activeBodyPart = parts[0];
+  if (!activeBodyPart || !bodyPartOrderList.includes(activeBodyPart)) activeBodyPart = bodyPartOrderList[0];
   renderBodyPartTabs();
   renderExerciseList();
 }
 function renderBodyPartTabs(){
   const el = document.getElementById('bodypart-tabs');
-  el.innerHTML = Object.keys(bodyPartGroups).map(bp =>
+  el.innerHTML = bodyPartOrderList.map(bp =>
     `<div class="bodypart-tab${bp===activeBodyPart?' active':''}" onclick="selectBodyPart('${bp}')">${bp}</div>`
   ).join('');
 }
@@ -557,10 +569,14 @@ async function loadExerciseRecords(){
   const stats = exerciseStatsMap;
   const keys = Object.keys(stats);
   if (!keys.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
-  // 部位順（exerciseMasterの並び順）→ 記録のない種目は末尾
-  const orderIndex = {};
-  exerciseMaster.forEach((m, i) => { orderIndex[m.id] = i; orderIndex[m.name] = i; });
-  keys.sort((a, b) => (orderIndex[a] ?? 999) - (orderIndex[b] ?? 999));
+  // ★ 部位の固定順 → 各部位内は種目名の五十音順
+  keys.sort((a, b) => {
+    const sa = stats[a], sb = stats[b];
+    const pa = bodyPartOrderList.includes(sa.body_part) ? bodyPartOrderList.indexOf(sa.body_part) : 999;
+    const pb = bodyPartOrderList.includes(sb.body_part) ? bodyPartOrderList.indexOf(sb.body_part) : 999;
+    if (pa !== pb) return pa - pb;
+    return sa.name.localeCompare(sb.name, 'ja');
+  });
   el.innerHTML = keys.map(key => {
     const s = stats[key];
     return `<div class="record-card" onclick='openExerciseDetail(${JSON.stringify(key)})'>
