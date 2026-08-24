@@ -92,7 +92,6 @@
 
   .bodypart-section-title { font-size: 13px; font-weight: 700; color: #888; margin: 16px 0 8px; }
   .exercise-row { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; border: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
-  .exercise-row.inactive { opacity: 0.5; }
   .exercise-row-name { flex: 1; font-size: 13px; font-weight: 600; }
   .exercise-row-name input { width: 100%; border: none; background: transparent; font-size: 13px; font-weight: 600; }
   .exercise-row-name input:focus { outline: 1px solid #FF5A36; border-radius: 4px; padding: 2px 4px; }
@@ -466,11 +465,11 @@ function renderExerciseMaster(){
   for (const bp of order) {
     html += `<div class="bodypart-section-title">${bp}</div>`;
     html += groups[bp].map(ex => `
-      <div class="exercise-row${ex.is_active ? '' : ' inactive'}">
+      <div class="exercise-row">
         <div class="exercise-row-name">
           <input type="text" value="${ex.name}" onchange="updateExerciseName('${ex.id}', this.value)">
         </div>
-        <button class="exercise-row-btn" onclick="toggleExerciseActive('${ex.id}', ${!ex.is_active})">${ex.is_active ? '非表示にする' : '再表示する'}</button>
+        <button class="exercise-row-btn danger" onclick="deleteExercise('${ex.id}', '${ex.name.replace(/'/g, "\\'")}')">削除する</button>
       </div>
     `).join('');
   }
@@ -495,9 +494,10 @@ async function updateExerciseName(id, newName){
   await loadExerciseMaster();
 }
 
-async function toggleExerciseActive(id, newActive){
-  const { error } = await sbClient.from('exercise_master').update({ is_active: newActive }).eq('id', id);
-  if (error) { alert('更新に失敗しました'); return; }
+async function deleteExercise(id, name){
+  if (!confirm(`「${name}」を削除しますか？\n選択肢から選べなくなりますが、これまでの会員の記録は残ります。`)) return;
+  const { error } = await sbClient.from('exercise_master').delete().eq('id', id);
+  if (error) { alert('削除に失敗しました'); return; }
   await loadExerciseMaster();
 }
 
