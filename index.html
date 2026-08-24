@@ -45,9 +45,11 @@
   .star-btn { font-size: 26px; cursor: pointer; color: #333; }
   .star-btn.filled { color: #FFC94A; }
   .exercise-card { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; }
-  .exercise-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .exercise-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }
+  .exercise-name-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .exercise-name { font-size: 18px; font-weight: 700; color: #fff; }
-  .exercise-remove { color: #888; font-size: 12px; padding: 4px 8px; cursor: pointer; }
+  .best-badge { font-size: 11px; font-weight: 700; color: #FFC94A; background: #2a2210; border: 1px solid #4a3a10; border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
+  .exercise-remove { color: #888; font-size: 12px; padding: 4px 8px; cursor: pointer; flex-shrink: 0; }
   .set-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #262626; }
   .set-row:first-of-type { border-top: none; }
   .set-num { font-size: 13px; color: #666; width: 20px; }
@@ -66,7 +68,7 @@
   .bodypart-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 99px; background: #1c1c1c; border: 1px solid #333; color: #999; font-size: 13px; font-weight: 700; cursor: pointer; }
   .bodypart-tab.active { background: #FF5A36; border-color: #FF5A36; color: #fff; }
   .exercise-list { padding: 8px 14px; }
-  .exercise-option { background: #1c1c1c; border: 1px solid #262626; border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #eee; cursor: pointer; }
+  .exercise-option { background: #1c1c1c; border: 1px solid #262626; border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
   .exercise-option:active { background: #262626; }
   .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #262626; font-size: 13px; }
   .detail-row:first-of-type { border-top: none; }
@@ -184,6 +186,7 @@ let staffList = [];        // [{id,name,nickname}]
 let recentLogs = [];       // for home
 let historyLogs = [];      // for history screen
 let allLogsForStats = null; // cache: full logs for exercise-record stats
+let exerciseStatsMap = null; // cache: {key -> {name, body_part, best, history}}
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
 let selectedTrainer = null;      // null = 未選択（必須）, 'SORA' や '自主トレ' などが入る
@@ -316,10 +319,11 @@ async function deleteLog(id){
   await loadRecent();
   await loadHistory();
   allLogsForStats = null; // キャッシュを無効化（次回の種目別記録で再取得）
+  exerciseStatsMap = null;
 }
 
 // ===== 新規記録フォーム =====
-function startNewRecord(){
+async function startNewRecord(){
   selectedExercises = [];
   selectedTrainer = null;
   selectedSatisfaction = null;
@@ -330,6 +334,14 @@ function startNewRecord(){
   renderSatisfactionButtons();
   renderExerciseCards();
   goScreen('screen-record');
+  // 自己ベストバッジ表示のため裏で統計を読み込んでおく
+  await ensureExerciseStats();
+}
+
+async function ensureExerciseStats(){
+  const logs = await loadAllLogsForStats();
+  exerciseStatsMap = buildExerciseStats(logs);
+  renderExerciseCards();
 }
 
 function renderTrainerButtons(){
@@ -350,10 +362,19 @@ function renderSatisfactionButtons(){
 }
 function selectSatisfaction(n){ selectedSatisfaction = n; renderSatisfactionButtons(); checkSubmitEnabled(); }
 
+function getBestBadgeHtml(exerciseIdOrName){
+  if (!exerciseStatsMap) return '';
+  const stat = exerciseStatsMap[exerciseIdOrName];
+  if (!stat || !stat.best) return '';
+  return `<span class="best-badge">MAX ${stat.best.weight}kg</span>`;
+}
+
 function renderExerciseCards(){
   const el = document.getElementById('exercise-cards');
   if (!selectedExercises.length) { el.innerHTML = ''; checkSubmitEnabled(); return; }
   el.innerHTML = selectedExercises.map((ex, exIdx) => {
+    const badgeKey = ex.exercise_id || ex.name;
+    const badgeHtml = getBestBadgeHtml(badgeKey);
     const setsHtml = ex.sets.map((s, sIdx) => `
       <div class="set-row">
         <span class="set-num">${sIdx+1}</span>
@@ -378,7 +399,10 @@ function renderExerciseCards(){
     `).join('');
     return `<div class="exercise-card">
       <div class="exercise-card-top">
-        <span class="exercise-name">${ex.name}</span>
+        <div class="exercise-name-wrap">
+          <span class="exercise-name">${ex.name}</span>
+          ${badgeHtml}
+        </div>
         <span class="exercise-remove" onclick="removeExercise(${exIdx})">種目を削除</span>
       </div>
       ${setsHtml}
@@ -451,6 +475,7 @@ async function submitRecord(){
   if (error) { alert('記録に失敗しました。もう一度お試しください。'); return; }
   await loadRecent();
   allLogsForStats = null; // キャッシュを無効化
+  exerciseStatsMap = null;
   goHome();
 }
 
@@ -472,7 +497,10 @@ function selectBodyPart(bp){ activeBodyPart = bp; renderBodyPartTabs(); renderEx
 function renderExerciseList(){
   const el = document.getElementById('exercise-list');
   const list = bodyPartGroups[activeBodyPart] || [];
-  el.innerHTML = list.map(ex => `<div class="exercise-option" onclick='addExercise(${JSON.stringify(ex)})'>${ex.name}</div>`).join('');
+  el.innerHTML = list.map(ex => {
+    const badgeHtml = getBestBadgeHtml(ex.id);
+    return `<div class="exercise-option" onclick='addExercise(${JSON.stringify(ex)})'><span>${ex.name}</span>${badgeHtml}</div>`;
+  }).join('');
 }
 
 // ===== 種目別記録（自己ベスト） =====
@@ -515,7 +543,8 @@ async function loadExerciseRecords(){
   const el = document.getElementById('exercise-records-content');
   el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>読み込み中...</div>';
   const logs = await loadAllLogsForStats();
-  const stats = buildExerciseStats(logs);
+  exerciseStatsMap = buildExerciseStats(logs);
+  const stats = exerciseStatsMap;
   const keys = Object.keys(stats);
   if (!keys.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
   // 部位順（exerciseMasterの並び順）→ 記録のない種目は末尾
