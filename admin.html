@@ -182,24 +182,24 @@ let currentCustomer = null;
 let currentCustomerLogs = [];
 let exerciseMaster = [];
 
-// 五十音の行見出し（濁点・半濁点・小文字などはこの範囲に丸め込む）
-const GOJUON_ROWS = [
-  { label: 'あ', chars: 'あいうえおぁぃぅぇぉ' },
-  { label: 'か', chars: 'かきくけこがぎぐげご' },
-  { label: 'さ', chars: 'さしすせそざじずぜぞ' },
-  { label: 'た', chars: 'たちつてとだぢづでどっ' },
-  { label: 'な', chars: 'なにぬねの' },
-  { label: 'は', chars: 'はひふへほばびぶべぼぱぴぷぺぽ' },
-  { label: 'ま', chars: 'まみむめも' },
-  { label: 'や', chars: 'やゆよゃゅょ' },
-  { label: 'ら', chars: 'らりるれろ' },
-  { label: 'わ', chars: 'わをんゎ' },
-];
+// 五十音の固定並び順（この配列順で表示・グループ化する。#（判定不可）は必ず最後）
+const GOJUON_CHARS = ['あ','い','う','え','お','か','き','く','け','こ','さ','し','す','せ','そ','た','ち','つ','て','と','な','に','ぬ','ね','の','は','ひ','ふ','へ','ほ','ま','み','む','め','も','や','ゆ','よ','ら','り','る','れ','ろ','わ','を','ん'];
 
-// カタカナ・全角英数などをできる範囲でひらがな判定するための簡易変換
+// 濁点・半濁点・小文字・拗音などを清音の五十音に丸め込むための対応表
+const GOJUON_NORMALIZE = {
+  'が':'か','ぎ':'き','ぐ':'く','げ':'け','ご':'こ',
+  'ざ':'さ','じ':'し','ず':'す','ぜ':'せ','ぞ':'そ',
+  'だ':'た','ぢ':'ち','づ':'つ','で':'て','ど':'と','っ':'つ',
+  'ば':'は','び':'ひ','ぶ':'ふ','べ':'へ','ぼ':'ほ',
+  'ぱ':'は','ぴ':'ひ','ぷ':'ふ','ぺ':'へ','ぽ':'ほ',
+  'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お',
+  'ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ'
+};
+
+// カタカナ → ひらがな変換
 function toHiraganaChar(ch){
   const code = ch.charCodeAt(0);
-  if (code >= 0x30A1 && code <= 0x30F6) { // カタカナ範囲 → ひらがな
+  if (code >= 0x30A1 && code <= 0x30F6) {
     return String.fromCharCode(code - 0x60);
   }
   return ch;
@@ -209,10 +209,9 @@ function getGojuonLabel(customer){
   // ふりがなが登録されていればそれを優先。なければ名前から推定（漢字等は判定できず#になる）
   const source = (customer.furigana && customer.furigana.trim()) ? customer.furigana.trim() : (customer.name || '').trim();
   if (!source) return '#';
-  const first = toHiraganaChar(source[0]);
-  for (const row of GOJUON_ROWS) {
-    if (row.chars.includes(first)) return row.label;
-  }
+  let first = toHiraganaChar(source[0]);
+  if (GOJUON_NORMALIZE[first]) first = GOJUON_NORMALIZE[first];
+  if (GOJUON_CHARS.includes(first)) return first;
   return '#';
 }
 
@@ -273,14 +272,25 @@ function renderCustomerList(){
     return;
   }
 
-  // 行ごとにグループ化
+  // ラベルごとにグループ化
   const groups = {};
-  const groupOrder = [];
   for (const c of filtered) {
     const label = getGojuonLabel(c);
-    if (!groups[label]) { groups[label] = []; groupOrder.push(label); }
+    if (!groups[label]) groups[label] = [];
     groups[label].push(c);
   }
+  // 各グループ内は五十音（ふりがな優先）→ふりがなが同じ場合は名前で安定ソート
+  for (const label in groups) {
+    groups[label].sort((a, b) => {
+      const fa = (a.furigana || a.name || '');
+      const fb = (b.furigana || b.name || '');
+      return fa.localeCompare(fb, 'ja');
+    });
+  }
+
+  // 固定の五十音順でグループを並べ、最後に#を置く。存在しないグループはスキップ
+  const groupOrder = GOJUON_CHARS.filter(label => groups[label]);
+  if (groups['#']) groupOrder.push('#');
 
   barEl.innerHTML = groupOrder.map(label =>
     `<div class="alpha-index-chip" onclick="scrollToAlphaGroup('${label}')">${label}</div>`
