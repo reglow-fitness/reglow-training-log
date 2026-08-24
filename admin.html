@@ -35,15 +35,30 @@
   .alpha-section-badge { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: #1a1a1a; color: white; font-size: 13px; font-weight: 700; margin-right: 8px; flex-shrink: 0; }
   .alpha-section-title { display: flex; align-items: center; margin: 18px 0 8px; }
   .alpha-section-title:first-child { margin-top: 0; }
-  .customer-row { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 6px; cursor: pointer; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .customer-row { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 6px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .customer-row:hover { background: #fafafa; }
+  .customer-main { flex: 1; cursor: pointer; }
   .customer-name { font-size: 14px; font-weight: 700; }
-  .customer-meta { font-size: 11px; color: #999; }
-  .blocked-badge { font-size: 10px; background: #ffe0e0; color: #c0392b; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
+  .customer-meta { font-size: 11px; color: #999; margin-top: 2px; }
+  .furigana-input { font-size: 11px; color: #666; border: 1px solid transparent; background: transparent; padding: 2px 4px; border-radius: 4px; width: 110px; }
+  .furigana-input:hover, .furigana-input:focus { border-color: #ddd; background: #fafafa; outline: none; }
+  .furigana-input.empty { color: #ccc; }
+  .blocked-badge { font-size: 10px; background: #ffe0e0; color: #c0392b; padding: 2px 8px; border-radius: 99px; font-weight: 700; flex-shrink: 0; }
 
   .back-link { color: #FF5A36; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 12px; display: inline-block; }
   .customer-detail-header { background: white; border-radius: 12px; padding: 16px; margin-bottom: 14px; border: 1px solid #eee; }
   .customer-detail-name { font-size: 17px; font-weight: 700; }
+
+  .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .stat-card { background: white; border-radius: 12px; padding: 16px; border: 1px solid #eee; }
+  .stat-card-label { font-size: 11px; color: #999; font-weight: 700; margin-bottom: 8px; }
+  .stat-card-value { font-size: 26px; font-weight: 700; color: #FF5A36; }
+  .stat-card-sub { font-size: 11px; color: #aaa; margin-top: 4px; }
+  .trainer-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+  .trainer-bar-name { width: 64px; flex-shrink: 0; color: #555; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trainer-bar-track { flex: 1; background: #f0f0f0; border-radius: 99px; height: 8px; overflow: hidden; }
+  .trainer-bar-fill { height: 100%; background: #FF5A36; border-radius: 99px; }
+  .trainer-bar-count { width: 46px; flex-shrink: 0; text-align: right; color: #999; font-size: 11px; }
 
   .log-card { background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border: 1px solid #eee; cursor: pointer; }
   .log-card:hover { background: #fafafa; }
@@ -66,6 +81,7 @@
 
   .empty-msg { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
   .loading { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
+  .section-label { font-size: 12px; color: #888; font-weight: 700; margin: 18px 0 8px; }
 
   /* 種目マスター管理 */
   .add-exercise-form { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #eee; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
@@ -119,6 +135,8 @@
         <div class="customer-detail-header">
           <div class="customer-detail-name" id="detail-customer-name"></div>
         </div>
+        <div class="stats-row" id="customer-stats-row"></div>
+        <div class="section-label">記録一覧</div>
         <div id="customer-logs-list"><div class="loading">読み込み中...</div></div>
       </div>
     </div>
@@ -178,22 +196,24 @@ const GOJUON_ROWS = [
   { label: 'わ', chars: 'わをんゎ' },
 ];
 
-// カタカナ・漢字などをできる範囲でひらがな判定するための簡易カタカナ→ひらがな変換
+// カタカナ・全角英数などをできる範囲でひらがな判定するための簡易変換
 function toHiraganaChar(ch){
   const code = ch.charCodeAt(0);
-  if (code >= 0x30A1 && code <= 0x30F6) { // カタカナ範囲
+  if (code >= 0x30A1 && code <= 0x30F6) { // カタカナ範囲 → ひらがな
     return String.fromCharCode(code - 0x60);
   }
   return ch;
 }
 
-function getGojuonLabel(name){
-  if (!name) return '#';
-  const first = toHiraganaChar(name.trim()[0]);
+function getGojuonLabel(customer){
+  // ふりがなが登録されていればそれを優先。なければ名前から推定（漢字等は判定できず#になる）
+  const source = (customer.furigana && customer.furigana.trim()) ? customer.furigana.trim() : (customer.name || '').trim();
+  if (!source) return '#';
+  const first = toHiraganaChar(source[0]);
   for (const row of GOJUON_ROWS) {
     if (row.chars.includes(first)) return row.label;
   }
-  return '#'; // 漢字・アルファベット等、判定できないものはまとめて#
+  return '#';
 }
 
 async function init(){
@@ -237,7 +257,7 @@ function switchTab(tab){
 
 // ===== 会員別記録 =====
 async function loadCustomers(){
-  const { data } = await sbClient.from('customers').select('id,name,is_blocked').order('name');
+  const { data } = await sbClient.from('customers').select('id,name,is_blocked,furigana').order('name');
   allCustomers = data || [];
   renderCustomerList();
 }
@@ -246,23 +266,22 @@ function renderCustomerList(){
   const kw = document.getElementById('customer-search').value.trim();
   const listEl = document.getElementById('customer-list');
   const barEl = document.getElementById('alpha-index-bar');
-  const filtered = kw ? allCustomers.filter(c => (c.name||'').includes(kw)) : allCustomers;
+  const filtered = kw ? allCustomers.filter(c => (c.name||'').includes(kw) || (c.furigana||'').includes(kw)) : allCustomers;
   if (!filtered.length) {
     listEl.innerHTML = '<div class="empty-msg">該当する会員がいません</div>';
     barEl.innerHTML = '';
     return;
   }
 
-  // 行ごとにグループ化（元々name順で取得済みなので、グループ内の順序は維持される）
+  // 行ごとにグループ化
   const groups = {};
   const groupOrder = [];
   for (const c of filtered) {
-    const label = getGojuonLabel(c.name);
+    const label = getGojuonLabel(c);
     if (!groups[label]) { groups[label] = []; groupOrder.push(label); }
     groups[label].push(c);
   }
 
-  // ページ上部のインデックスチップ（存在する行のみ表示）
   barEl.innerHTML = groupOrder.map(label =>
     `<div class="alpha-index-chip" onclick="scrollToAlphaGroup('${label}')">${label}</div>`
   ).join('');
@@ -271,10 +290,14 @@ function renderCustomerList(){
   for (const label of groupOrder) {
     html += `<div class="alpha-section-title" id="alpha-group-${label}"><span class="alpha-section-badge">${label}</span></div>`;
     html += groups[label].map(c => `
-      <div class="customer-row" onclick="openCustomerDetail('${c.id}')">
-        <div>
+      <div class="customer-row">
+        <div class="customer-main" onclick="openCustomerDetail('${c.id}')">
           <div class="customer-name">${c.name || '（名前未設定）'}</div>
         </div>
+        <input type="text" class="furigana-input${c.furigana ? '' : ' empty'}" placeholder="ふりがな未入力"
+          value="${c.furigana || ''}"
+          onclick="event.stopPropagation()"
+          onchange="updateFurigana('${c.id}', this.value)">
         ${c.is_blocked ? '<span class="blocked-badge">ブロック中</span>' : ''}
       </div>
     `).join('');
@@ -287,6 +310,15 @@ function scrollToAlphaGroup(label){
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+async function updateFurigana(customerId, value){
+  const furigana = value.trim();
+  const { error } = await sbClient.from('customers').update({ furigana: furigana || null }).eq('id', customerId);
+  if (error) { alert('ふりがなの更新に失敗しました'); return; }
+  const c = allCustomers.find(x => x.id === customerId);
+  if (c) c.furigana = furigana || null;
+  renderCustomerList();
+}
+
 async function openCustomerDetail(customerId){
   const c = allCustomers.find(x => x.id === customerId);
   if (!c) return;
@@ -294,10 +326,56 @@ async function openCustomerDetail(customerId){
   document.getElementById('customer-list-view').style.display = 'none';
   document.getElementById('customer-detail-view').style.display = 'block';
   document.getElementById('detail-customer-name').textContent = (c.name || '（名前未設定）') + (c.is_blocked ? '（ブロック中）' : '');
+  document.getElementById('customer-stats-row').innerHTML = '';
   document.getElementById('customer-logs-list').innerHTML = '<div class="loading">読み込み中...</div>';
   const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', customerId).order('log_date', { ascending: false }).order('created_at', { ascending: false });
   currentCustomerLogs = data || [];
+  renderCustomerStats();
   renderCustomerLogs();
+}
+
+function renderCustomerStats(){
+  const el = document.getElementById('customer-stats-row');
+  if (!currentCustomerLogs.length) { el.innerHTML = ''; return; }
+
+  // 平均満足度
+  const withScore = currentCustomerLogs.filter(l => l.satisfaction_score != null);
+  const avgScore = withScore.length ? (withScore.reduce((sum, l) => sum + l.satisfaction_score, 0) / withScore.length) : null;
+
+  // トレーナー別対応回数
+  const trainerCounts = {};
+  for (const l of currentCustomerLogs) {
+    const name = l.trainer_name || '未選択';
+    trainerCounts[name] = (trainerCounts[name] || 0) + 1;
+  }
+  const totalCount = currentCustomerLogs.length;
+  const sortedTrainers = Object.entries(trainerCounts).sort((a, b) => b[1] - a[1]);
+  const maxCount = sortedTrainers.length ? sortedTrainers[0][1] : 1;
+
+  const satisfactionCard = `
+    <div class="stat-card">
+      <div class="stat-card-label">平均満足度</div>
+      <div class="stat-card-value">${avgScore != null ? avgScore.toFixed(1) : '—'} <span style="font-size:14px;color:#ccc;">/ 5</span></div>
+      <div class="stat-card-sub">${withScore.length}件の記録から算出</div>
+    </div>`;
+
+  const trainerBars = sortedTrainers.map(([name, count]) => {
+    const pct = totalCount ? Math.round((count / totalCount) * 100) : 0;
+    const barWidth = maxCount ? Math.round((count / maxCount) * 100) : 0;
+    return `<div class="trainer-bar-row">
+      <div class="trainer-bar-name">${name}</div>
+      <div class="trainer-bar-track"><div class="trainer-bar-fill" style="width:${barWidth}%;"></div></div>
+      <div class="trainer-bar-count">${count}回（${pct}%）</div>
+    </div>`;
+  }).join('');
+
+  const trainerCard = `
+    <div class="stat-card">
+      <div class="stat-card-label">担当トレーナー内訳（全${totalCount}回）</div>
+      ${trainerBars}
+    </div>`;
+
+  el.innerHTML = satisfactionCard + trainerCard;
 }
 
 function renderCustomerLogs(){
