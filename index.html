@@ -37,6 +37,7 @@
   .log-empty { text-align: center; color: #555; font-size: 13px; padding: 30px 0; }
   .form-block { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 16px; border: 1px solid #262626; }
   .form-label { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 10px; display: block; }
+  .form-label .required-mark { color: #FF5A36; margin-left: 4px; }
   .date-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; font-size: 15px; }
   .trainer-buttons, .satisfaction-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill-btn { padding: 10px 16px; border-radius: 99px; border: 1.5px solid #333; background: #111; color: #ccc; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -124,14 +125,14 @@
     <input class="date-input" type="date" id="record-date">
   </div>
   <div class="form-block">
-    <span class="form-label">担当トレーナー（任意）</span>
+    <span class="form-label">担当トレーナー<span class="required-mark">必須</span></span>
     <div class="trainer-buttons" id="trainer-buttons"></div>
   </div>
   <div class="section-label">種目</div>
   <div id="exercise-cards"></div>
   <div class="add-exercise-btn" onclick="goScreen('screen-picker')">＋ 種目を追加</div>
   <div class="form-block">
-    <span class="form-label">今回の満足度</span>
+    <span class="form-label">今回の満足度<span class="required-mark">必須</span></span>
     <div class="satisfaction-buttons" id="satisfaction-buttons"></div>
   </div>
   <div class="form-block">
@@ -172,6 +173,7 @@
 const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
 const LIFF_ID = '2009580897-BbRA5Zr4';
+const SELF_TRAINING_LABEL = '自主トレ';
 
 let sbClient = null;
 let lineProfile = null;
@@ -184,8 +186,8 @@ let historyLogs = [];      // for history screen
 let allLogsForStats = null; // cache: full logs for exercise-record stats
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
-let selectedTrainer = null;
-let selectedSatisfaction = null;
+let selectedTrainer = null;      // null = 未選択（必須）, 'SORA' や '自主トレ' などが入る
+let selectedSatisfaction = null; // null = 未選択（必須）
 let screenHistoryStack = [];
 
 function todayStr(){
@@ -334,9 +336,9 @@ function renderTrainerButtons(){
   const el = document.getElementById('trainer-buttons');
   const names = staffList.map(s => s.nickname || s.name);
   el.innerHTML = names.map(n => `<div class="pill-btn${selectedTrainer===n?' selected':''}" onclick="selectTrainer('${n}')">${n}</div>`).join('') +
-    `<div class="pill-btn${selectedTrainer===null?' selected':''}" onclick="selectTrainer(null)">選択なし</div>`;
+    `<div class="pill-btn${selectedTrainer===SELF_TRAINING_LABEL?' selected':''}" onclick="selectTrainer('${SELF_TRAINING_LABEL}')">${SELF_TRAINING_LABEL}</div>`;
 }
-function selectTrainer(name){ selectedTrainer = name; renderTrainerButtons(); }
+function selectTrainer(name){ selectedTrainer = name; renderTrainerButtons(); checkSubmitEnabled(); }
 
 function renderSatisfactionButtons(){
   const el = document.getElementById('satisfaction-buttons');
@@ -346,7 +348,7 @@ function renderSatisfactionButtons(){
   }
   el.innerHTML = html;
 }
-function selectSatisfaction(n){ selectedSatisfaction = n; renderSatisfactionButtons(); }
+function selectSatisfaction(n){ selectedSatisfaction = n; renderSatisfactionButtons(); checkSubmitEnabled(); }
 
 function renderExerciseCards(){
   const el = document.getElementById('exercise-cards');
@@ -425,7 +427,8 @@ function setValueFromInput(exIdx, sIdx, field, rawValue){
 }
 
 function checkSubmitEnabled(){
-  document.getElementById('submit-btn').disabled = selectedExercises.length === 0;
+  const ok = selectedExercises.length > 0 && selectedTrainer !== null && selectedSatisfaction !== null;
+  document.getElementById('submit-btn').disabled = !ok;
 }
 
 async function submitRecord(){
@@ -433,6 +436,8 @@ async function submitRecord(){
   const date = document.getElementById('record-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!selectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
+  if (selectedTrainer === null) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
+  if (selectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
     customer_id: currentCustomer.id,
