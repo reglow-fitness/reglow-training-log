@@ -23,6 +23,11 @@
   .home-sub { font-size: 12px; color: #888; margin-top: 2px; }
   .add-record-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 14px; background: #FF5A36; color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 15px; font-weight: 700; cursor: pointer; }
   .add-record-btn:active { transform: scale(0.98); }
+  .menu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 14px 6px; }
+  .menu-tile { background: #1c1c1c; border: 1px solid #262626; border-radius: 14px; padding: 16px 12px; text-align: center; cursor: pointer; }
+  .menu-tile:active { transform: scale(0.97); }
+  .menu-tile-icon { font-size: 22px; margin-bottom: 6px; }
+  .menu-tile-label { font-size: 13px; font-weight: 700; color: #eee; }
   .section-label { padding: 6px 16px 8px; font-size: 12px; color: #777; font-weight: 700; }
   .log-card { background: #1c1c1c; margin: 0 14px 10px; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; cursor: pointer; }
   .log-card-top { display: flex; justify-content: space-between; align-items: baseline; }
@@ -66,6 +71,20 @@
   .detail-row:first-of-type { border-top: none; }
   .error-box { margin: 14px; background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 12px; padding: 16px; font-size: 13px; color: #e78; line-height: 1.7; text-align: center; }
   .delete-log-btn { display: block; margin: 18px 14px 0; background: none; border: 1.5px solid #4a2a2a; color: #e74c3c; border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; width: calc(100% - 28px); cursor: pointer; }
+  .record-card { background: #1c1c1c; margin: 0 14px 10px; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .record-card-name { font-size: 15px; font-weight: 700; color: #fff; }
+  .record-card-part { font-size: 11px; color: #777; margin-top: 2px; }
+  .record-card-best { text-align: right; }
+  .record-card-best-value { font-size: 20px; font-weight: 700; color: #FF5A36; }
+  .record-card-best-label { font-size: 10px; color: #888; }
+  .record-history-row { background: #1c1c1c; margin: 0 14px 8px; border-radius: 12px; padding: 12px 16px; border: 1px solid #262626; }
+  .record-history-date { font-size: 12px; color: #888; font-weight: 700; margin-bottom: 6px; }
+  .record-history-sets { font-size: 13px; color: #ddd; line-height: 1.8; }
+  .record-history-sets .best-mark { color: #FFC94A; font-weight: 700; }
+  .best-summary { margin: 14px; background: linear-gradient(135deg, #2a1810, #1c1c1c); border: 1px solid #FF5A36; border-radius: 14px; padding: 18px 16px; text-align: center; }
+  .best-summary-label { font-size: 12px; color: #aaa; font-weight: 700; }
+  .best-summary-value { font-size: 32px; font-weight: 700; color: #FF5A36; margin-top: 4px; }
+  .best-summary-date { font-size: 11px; color: #777; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -82,6 +101,16 @@
       <div class="home-sub">今日もお疲れさまです</div>
     </div>
     <div class="add-record-btn" onclick="startNewRecord()">＋ 記録を追加</div>
+    <div class="menu-row">
+      <div class="menu-tile" onclick="openHistory()">
+        <div class="menu-tile-icon">📋</div>
+        <div class="menu-tile-label">記録一覧</div>
+      </div>
+      <div class="menu-tile" onclick="openExerciseRecords()">
+        <div class="menu-tile-icon">🏆</div>
+        <div class="menu-tile-label">種目別記録</div>
+      </div>
+    </div>
     <div class="section-label">最近の記録</div>
     <div id="recent-list"></div>
   </div>
@@ -129,6 +158,16 @@
   <div class="pb"></div>
 </div>
 
+<div class="screen" id="screen-exercise-records">
+  <div id="exercise-records-content"><div class="loading"><div class="loading-spinner"></div>読み込み中...</div></div>
+  <div class="pb"></div>
+</div>
+
+<div class="screen" id="screen-exercise-detail">
+  <div id="exercise-detail-content"></div>
+  <div class="pb"></div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
@@ -142,6 +181,7 @@ let bodyPartGroups = {};   // {胸:[...], 背中:[...]}
 let staffList = [];        // [{id,name,nickname}]
 let recentLogs = [];       // for home
 let historyLogs = [];      // for history screen
+let allLogsForStats = null; // cache: full logs for exercise-record stats
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
 let selectedTrainer = null;
@@ -273,6 +313,7 @@ async function deleteLog(id){
   goBack();
   await loadRecent();
   await loadHistory();
+  allLogsForStats = null; // キャッシュを無効化（次回の種目別記録で再取得）
 }
 
 // ===== 新規記録フォーム =====
@@ -404,6 +445,7 @@ async function submitRecord(){
   btn.disabled = false; btn.textContent = 'この内容で記録する';
   if (error) { alert('記録に失敗しました。もう一度お試しください。'); return; }
   await loadRecent();
+  allLogsForStats = null; // キャッシュを無効化
   goHome();
 }
 
@@ -428,6 +470,104 @@ function renderExerciseList(){
   el.innerHTML = list.map(ex => `<div class="exercise-option" onclick='addExercise(${JSON.stringify(ex)})'>${ex.name}</div>`).join('');
 }
 
+// ===== 種目別記録（自己ベスト） =====
+async function loadAllLogsForStats(){
+  if (allLogsForStats) return allLogsForStats;
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).limit(500);
+  allLogsForStats = data || [];
+  return allLogsForStats;
+}
+
+function buildExerciseStats(logs){
+  // key: exercise_id || name
+  const map = {}; // key -> {name, body_part, best:{weight,reps,date}, history:[{date, sets}]}
+  for (const l of logs) {
+    for (const ex of (l.exercises || [])) {
+      const key = ex.exercise_id || ex.name;
+      if (!map[key]) {
+        const master = exerciseMaster.find(m => m.id === ex.exercise_id || m.name === ex.name);
+        map[key] = { name: ex.name, body_part: master ? master.body_part : '', best: null, history: [] };
+      }
+      const entry = map[key];
+      let dayBest = null;
+      for (const s of (ex.sets || [])) {
+        if (!entry.best || s.weight > entry.best.weight) {
+          entry.best = { weight: s.weight, reps: s.reps, date: l.log_date };
+        }
+        if (!dayBest || s.weight > dayBest) dayBest = s.weight;
+      }
+      entry.history.push({ date: l.log_date, sets: ex.sets || [], dayBest });
+    }
+  }
+  return map;
+}
+
+async function openExerciseRecords(){
+  goScreen('screen-exercise-records');
+}
+
+async function loadExerciseRecords(){
+  const el = document.getElementById('exercise-records-content');
+  el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>読み込み中...</div>';
+  const logs = await loadAllLogsForStats();
+  const stats = buildExerciseStats(logs);
+  const keys = Object.keys(stats);
+  if (!keys.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
+  // 部位順（exerciseMasterの並び順）→ 記録のない種目は末尾
+  const orderIndex = {};
+  exerciseMaster.forEach((m, i) => { orderIndex[m.id] = i; orderIndex[m.name] = i; });
+  keys.sort((a, b) => (orderIndex[a] ?? 999) - (orderIndex[b] ?? 999));
+  el.innerHTML = keys.map(key => {
+    const s = stats[key];
+    return `<div class="record-card" onclick='openExerciseDetail(${JSON.stringify(key)})'>
+      <div>
+        <div class="record-card-name">${s.name}</div>
+        <div class="record-card-part">${s.body_part || ''}</div>
+      </div>
+      <div class="record-card-best">
+        <div class="record-card-best-value">${s.best ? s.best.weight : '—'}${s.best ? 'kg' : ''}</div>
+        <div class="record-card-best-label">自己ベスト</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let currentExerciseDetailKey = null;
+async function openExerciseDetail(key){
+  currentExerciseDetailKey = key;
+  const logs = await loadAllLogsForStats();
+  const stats = buildExerciseStats(logs);
+  const s = stats[key];
+  if (!s) return;
+  renderExerciseDetail(s);
+  goScreen('screen-exercise-detail');
+}
+
+function renderExerciseDetail(s){
+  const dn = ['日','月','火','水','木','金','土'];
+  const bestDateObj = s.best ? new Date(s.best.date + 'T00:00:00') : null;
+  const bestDateStr = bestDateObj ? `${bestDateObj.getMonth()+1}月${bestDateObj.getDate()}日` : '—';
+  const summaryHtml = s.best ? `
+    <div class="best-summary">
+      <div class="best-summary-label">${s.name} 自己ベスト</div>
+      <div class="best-summary-value">${s.best.weight}kg × ${s.best.reps}回</div>
+      <div class="best-summary-date">${bestDateStr}</div>
+    </div>` : '';
+  const historyHtml = s.history.map(h => {
+    const d = new Date(h.date + 'T00:00:00');
+    const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+    const setsStr = h.sets.map((set, i) => {
+      const isBest = s.best && set.weight === s.best.weight && h.date === s.best.date;
+      return `<div>${i+1}セット目: ${set.weight}kg × ${set.reps}回${isBest ? ' <span class="best-mark">★ベスト</span>' : ''}</div>`;
+    }).join('');
+    return `<div class="record-history-row">
+      <div class="record-history-date">${dateStr}</div>
+      <div class="record-history-sets">${setsStr}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('exercise-detail-content').innerHTML = summaryHtml + historyHtml;
+}
+
 // ===== 画面遷移 =====
 function goScreen(id){
   const cur = document.querySelector('.screen.active');
@@ -437,6 +577,7 @@ function goScreen(id){
   updateHeader(id);
   if (id === 'screen-picker') openPicker();
   if (id === 'screen-history') loadHistory();
+  if (id === 'screen-exercise-records') loadExerciseRecords();
   window.scrollTo(0,0);
 }
 function goBack(){
@@ -456,7 +597,7 @@ function goHome(){
   window.scrollTo(0,0);
 }
 function updateHeader(id){
-  const titles = { 'screen-home':'トレーニング記録', 'screen-record':'記録を追加', 'screen-picker':'種目を選ぶ', 'screen-history':'記録一覧', 'screen-detail':'記録の詳細' };
+  const titles = { 'screen-home':'トレーニング記録', 'screen-record':'記録を追加', 'screen-picker':'種目を選ぶ', 'screen-history':'記録一覧', 'screen-detail':'記録の詳細', 'screen-exercise-records':'種目別記録', 'screen-exercise-detail':'種目の記録推移' };
   document.getElementById('header-title').textContent = titles[id] || 'トレーニング記録';
   document.getElementById('header-back').style.visibility = id === 'screen-home' ? 'hidden' : 'visible';
 }
