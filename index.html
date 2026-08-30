@@ -202,12 +202,11 @@ function todayStr(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// ★ 予約システムと同じロジック：有効期限内かつ残回数のあるチケットが1つでもあれば true
+// ★ 有効期間内のチケット・プランが1件でもあれば true（残数の有無は問わない）
 function hasValidTicket(customer){
   const tickets = customer?.tickets || [];
   const todayStr_ = todayStr();
   return tickets.some(t =>
-    (t.plan_type === 'unlimited' || t.remaining_count > 0) &&
     (!t.valid_from || t.valid_from <= todayStr_) &&
     (!t.expires_at || t.expires_at >= todayStr_)
   );
@@ -247,7 +246,7 @@ async function init(){
     return;
   }
 
-  // ★ 有効期限内のチケットを保有していない会員は利用不可
+  // ★ 有効期間内のチケット・プランを保有していない会員は利用不可
   if (!hasValidTicket(customerData)) {
     document.getElementById('home-loading').style.display = 'none';
     const box = document.getElementById('no-customer-box');
