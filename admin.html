@@ -23,7 +23,7 @@
   .login-error { color: #e74c3c; font-size: 12px; margin-top: 8px; text-align: center; }
 
   /* タブ */
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .tab-btn { padding: 10px 18px; border-radius: 10px; border: 1px solid #ddd; background: white; font-size: 13px; font-weight: 700; color: #555; cursor: pointer; }
   .tab-btn.active { background: #1a1a1a; color: white; border-color: #1a1a1a; }
 
@@ -97,6 +97,23 @@
   .exercise-row-name input:focus { outline: 1px solid #FF5A36; border-radius: 4px; padding: 2px 4px; }
   .exercise-row-btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; color: #666; }
   .exercise-row-btn.danger { color: #e74c3c; border-color: #f5c6c6; }
+
+  /* 予約×記録チェック */
+  .date-picker-row { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #eee; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .date-picker-row input[type=date] { padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .checkin-summary { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .checkin-summary-item { font-size: 12px; color: #666; }
+  .checkin-summary-item b { font-size: 15px; color: #111; margin-right: 3px; }
+  .checkin-row { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 6px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .checkin-row.done { border-left: 4px solid #2ecc71; }
+  .checkin-row.missing { border-left: 4px solid #e74c3c; }
+  .checkin-left { flex: 1; }
+  .checkin-name { font-size: 14px; font-weight: 700; }
+  .checkin-meta { font-size: 11px; color: #999; margin-top: 2px; }
+  .checkin-status-badge { font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 99px; flex-shrink: 0; }
+  .checkin-status-badge.done { background: #e6f9ee; color: #1a9c53; }
+  .checkin-status-badge.missing { background: #ffe0e0; color: #c0392b; }
+  .checkin-trainer-note { font-size: 10px; color: #aaa; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -119,6 +136,7 @@
   <div class="container">
     <div class="tabs">
       <div class="tab-btn active" id="tab-customers" onclick="switchTab('customers')">会員別記録</div>
+      <div class="tab-btn" id="tab-checkin" onclick="switchTab('checkin')">予約×記録チェック</div>
       <div class="tab-btn" id="tab-exercises" onclick="switchTab('exercises')">種目マスター管理</div>
     </div>
 
@@ -138,6 +156,18 @@
         <div class="section-label">記録一覧</div>
         <div id="customer-logs-list"><div class="loading">読み込み中...</div></div>
       </div>
+    </div>
+
+    <!-- 予約×記録チェックタブ -->
+    <div id="panel-checkin" style="display:none;">
+      <div class="date-picker-row">
+        <div class="form-group">
+          <label>確認する日付</label>
+          <input type="date" id="checkin-date">
+        </div>
+        <button class="add-btn" onclick="loadCheckin()">確認する</button>
+      </div>
+      <div id="checkin-content"><div class="empty-msg">日付を選んで「確認する」を押してください</div></div>
     </div>
 
     <!-- 種目マスター管理タブ -->
@@ -217,6 +247,11 @@ function getGojuonLabel(customer){
   return '#';
 }
 
+function todayStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 async function init(){
   sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const { data: { session } } = await sbClient.auth.getSession();
@@ -245,14 +280,18 @@ async function doLogout(){
 async function showMainScreen(){
   document.getElementById('screen-login').classList.remove('active');
   document.getElementById('screen-main').classList.add('active');
+  document.getElementById('checkin-date').value = todayStr();
+  document.getElementById('checkin-date').max = todayStr();
   await loadCustomers();
   await loadExerciseMaster();
 }
 
 function switchTab(tab){
   document.getElementById('tab-customers').classList.toggle('active', tab === 'customers');
+  document.getElementById('tab-checkin').classList.toggle('active', tab === 'checkin');
   document.getElementById('tab-exercises').classList.toggle('active', tab === 'exercises');
   document.getElementById('panel-customers').style.display = tab === 'customers' ? 'block' : 'none';
+  document.getElementById('panel-checkin').style.display = tab === 'checkin' ? 'block' : 'none';
   document.getElementById('panel-exercises').style.display = tab === 'exercises' ? 'block' : 'none';
 }
 
@@ -274,14 +313,12 @@ function renderCustomerList(){
     return;
   }
 
-  // ラベルごとにグループ化
   const groups = {};
   for (const c of filtered) {
     const label = getGojuonLabel(c);
     if (!groups[label]) groups[label] = [];
     groups[label].push(c);
   }
-  // 各グループ内は五十音（ふりがな優先）→ふりがなが同じ場合は名前で安定ソート
   for (const label in groups) {
     groups[label].sort((a, b) => {
       const fa = (a.furigana || a.name || '');
@@ -290,7 +327,6 @@ function renderCustomerList(){
     });
   }
 
-  // 固定の五十音順でグループを並べ、最後に#を置く。存在しないグループはスキップ
   const groupOrder = GOJUON_CHARS.filter(label => groups[label]);
   if (groups['#']) groupOrder.push('#');
 
@@ -350,11 +386,9 @@ function renderCustomerStats(){
   const el = document.getElementById('customer-stats-row');
   if (!currentCustomerLogs.length) { el.innerHTML = ''; return; }
 
-  // 平均満足度
   const withScore = currentCustomerLogs.filter(l => l.satisfaction_score != null);
   const avgScore = withScore.length ? (withScore.reduce((sum, l) => sum + l.satisfaction_score, 0) / withScore.length) : null;
 
-  // トレーナー別対応回数
   const trainerCounts = {};
   for (const l of currentCustomerLogs) {
     const name = l.trainer_name || '未選択';
@@ -413,7 +447,7 @@ function backToCustomerList(){
 }
 
 function openLogDetail(logId){
-  const l = currentCustomerLogs.find(x => x.id === logId);
+  const l = currentCustomerLogs.find(x => x.id === logId) || (window._checkinLogsCache || []).find(x => x.id === logId);
   if (!l) return;
   const dn = ['日','月','火','水','木','金','土'];
   const d = new Date(l.log_date + 'T00:00:00');
@@ -437,6 +471,83 @@ function closeDetailModal(){
   document.getElementById('detail-modal-bg').classList.remove('active');
 }
 
+// ===== 予約×記録チェック =====
+async function loadCheckin(){
+  const date = document.getElementById('checkin-date').value;
+  const contentEl = document.getElementById('checkin-content');
+  if (!date) { contentEl.innerHTML = '<div class="empty-msg">日付を選んでください</div>'; return; }
+  contentEl.innerHTML = '<div class="loading">読み込み中...</div>';
+
+  const startOfDay = new Date(date + 'T00:00:00').toISOString();
+  const endOfDay = new Date(date + 'T23:59:59').toISOString();
+
+  // ★ 予約システムのbookingsテーブルを読み取り専用で参照（データ・コードは一切変更しない）
+  const { data: bookings, error: bookingsErr } = await sbClient
+    .from('bookings')
+    .select('id, customer_id, menu_name, scheduled_at, status, menus(ticket_cost)')
+    .gte('scheduled_at', startOfDay)
+    .lte('scheduled_at', endOfDay)
+    .in('status', ['confirmed', 'completed'])
+    .order('scheduled_at');
+
+  if (bookingsErr) { contentEl.innerHTML = '<div class="empty-msg">予約データの取得に失敗しました</div>'; return; }
+  if (!bookings || !bookings.length) { contentEl.innerHTML = '<div class="empty-msg">この日の予約はありません</div>'; return; }
+
+  // ★ セミパーソナル（ticket_cost > 0、担当トレーナーがつくメニュー）のみ対象にする
+  const targetBookings = bookings.filter(b => (b.menus?.ticket_cost || 0) > 0);
+  if (!targetBookings.length) { contentEl.innerHTML = '<div class="empty-msg">この日はセミパーソナルの予約がありません</div>'; return; }
+
+  const customerIds = [...new Set(targetBookings.map(b => b.customer_id))];
+  const { data: logs } = await sbClient.from('training_logs').select('*').eq('log_date', date).in('customer_id', customerIds);
+  window._checkinLogsCache = logs || [];
+
+  const customerMap = {};
+  allCustomers.forEach(c => { customerMap[c.id] = c; });
+
+  const logsByCustomer = {};
+  for (const l of (logs || [])) {
+    if (!logsByCustomer[l.customer_id]) logsByCustomer[l.customer_id] = [];
+    logsByCustomer[l.customer_id].push(l);
+  }
+
+  const doneCount = targetBookings.filter(b => logsByCustomer[b.customer_id]?.length).length;
+  const missingCount = targetBookings.length - doneCount;
+
+  const dn = ['日','月','火','水','木','金','土'];
+
+  const rowsHtml = targetBookings.map(b => {
+    const c = customerMap[b.customer_id];
+    const name = c ? (c.name || '（名前未設定）') : '（会員情報なし）';
+    const bookingLogs = logsByCustomer[b.customer_id] || [];
+    const isDone = bookingLogs.length > 0;
+    const t = new Date(b.scheduled_at);
+    const timeStr = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+    const trainerNote = isDone
+      ? `<div class="checkin-trainer-note">記録上の担当: ${bookingLogs.map(l => l.trainer_name || '未選択').join('・')}</div>`
+      : '';
+    return `<div class="checkin-row ${isDone ? 'done' : 'missing'}" ${isDone ? `onclick="openLogDetail('${bookingLogs[0].id}')" style="cursor:pointer;"` : ''}>
+      <div class="checkin-left">
+        <div class="checkin-name">${timeStr} ${name}</div>
+        <div class="checkin-meta">${b.menu_name || 'セミパーソナル'}</div>
+        ${trainerNote}
+      </div>
+      <span class="checkin-status-badge ${isDone ? 'done' : 'missing'}">${isDone ? '記録済み' : '未記録'}</span>
+    </div>`;
+  }).join('');
+
+  const d = new Date(date + 'T00:00:00');
+  const dateHeaderStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+
+  contentEl.innerHTML = `
+    <div class="section-label">${dateHeaderStr} のセミパーソナル予約：${targetBookings.length}件</div>
+    <div class="checkin-summary">
+      <div class="checkin-summary-item"><b style="color:#1a9c53;">${doneCount}</b>件 記録済み</div>
+      <div class="checkin-summary-item"><b style="color:#c0392b;">${missingCount}</b>件 未記録</div>
+    </div>
+    ${rowsHtml}
+  `;
+}
+
 // ===== 種目マスター管理 =====
 async function loadExerciseMaster(){
   const { data } = await sbClient.from('exercise_master').select('*');
@@ -452,11 +563,9 @@ function renderExerciseMaster(){
     if (!groups[ex.body_part]) groups[ex.body_part] = [];
     groups[ex.body_part].push(ex);
   }
-  // ★ 各部位内は種目名の五十音順にソート
   for (const bp in groups) {
     groups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   }
-  // ★ 部位の並び順は固定順（BODYPART_ORDER）→ 未知の部位は末尾に五十音順で追加
   const knownParts = BODYPART_ORDER.filter(bp => groups[bp]);
   const unknownParts = Object.keys(groups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
   const order = [...knownParts, ...unknownParts];
