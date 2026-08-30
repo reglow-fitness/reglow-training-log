@@ -177,7 +177,7 @@ const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
 const LIFF_ID = '2009580897-BbRA5Zr4';
 const SELF_TRAINING_LABEL = '自主トレ';
 
-// 部位の固定表示順（この配列にない部位は末尾にアルファベット/五十音順で追加される）
+// 部位の固定表示順（この配列にない部位は末尾に五十音順で追加される）
 const BODYPART_ORDER = ['胸', '背中', '肩', '脚', '腕', '腹', 'その他'];
 
 let sbClient = null;
@@ -202,6 +202,17 @@ function todayStr(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// ★ 予約システムと同じロジック：有効期限内かつ残回数のあるチケットが1つでもあれば true
+function hasValidTicket(customer){
+  const tickets = customer?.tickets || [];
+  const todayStr_ = todayStr();
+  return tickets.some(t =>
+    (t.plan_type === 'unlimited' || t.remaining_count > 0) &&
+    (!t.valid_from || t.valid_from <= todayStr_) &&
+    (!t.expires_at || t.expires_at >= todayStr_)
+  );
+}
+
 async function init(){
   sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   try {
@@ -217,7 +228,8 @@ async function init(){
     return;
   }
 
-  const { data: customerData } = await sbClient.from('customers').select('*').eq('line_user_id', lineProfile.userId).maybeSingle();
+  // ★ ticketsも一緒に取得（有効期限チェックのため）
+  const { data: customerData } = await sbClient.from('customers').select('*, tickets(*)').eq('line_user_id', lineProfile.userId).maybeSingle();
   if (!customerData) {
     document.getElementById('home-loading').style.display = 'none';
     const box = document.getElementById('no-customer-box');
@@ -235,6 +247,15 @@ async function init(){
     return;
   }
 
+  // ★ 有効期限内のチケットを保有していない会員は利用不可
+  if (!hasValidTicket(customerData)) {
+    document.getElementById('home-loading').style.display = 'none';
+    const box = document.getElementById('no-customer-box');
+    box.style.display = 'block';
+    box.innerHTML = '<div class="error-box">現在有効なチケット・プランが確認できませんでした。<br>トレーニング記録機能はチケット・プランをご契約中の会員様がご利用いただけます。<br>詳しくはスタッフまでお問い合わせください。</div>';
+    return;
+  }
+
   currentCustomer = customerData;
 
   const [{ data: exData }, { data: stData }] = await Promise.all([
@@ -244,7 +265,7 @@ async function init(){
   exerciseMaster = exData || [];
   staffList = stData || [];
 
-  // ★ 種目を部位ごとにグループ化し、各部位内は五十音順（ふりがなではなく種目名の文字コード順・ja localeで近似）にソート
+  // ★ 種目を部位ごとにグループ化し、各部位内は五十音順にソート
   bodyPartGroups = {};
   for (const ex of exerciseMaster) {
     if (!bodyPartGroups[ex.body_part]) bodyPartGroups[ex.body_part] = [];
