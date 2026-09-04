@@ -34,6 +34,7 @@
   .log-date { font-size: 13px; font-weight: 700; color: #FF5A36; }
   .log-trainer { font-size: 11px; color: #888; }
   .log-exercises { font-size: 13px; color: #ccc; margin-top: 6px; line-height: 1.6; }
+  .log-count-badge { font-size: 10px; color: #999; background: #262626; padding: 2px 8px; border-radius: 99px; margin-left: 6px; }
   .log-empty { text-align: center; color: #555; font-size: 13px; padding: 30px 0; }
   .form-block { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 16px; border: 1px solid #262626; }
   .form-label { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 10px; display: block; }
@@ -74,7 +75,7 @@
   .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #262626; font-size: 13px; }
   .detail-row:first-of-type { border-top: none; }
   .error-box { margin: 14px; background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 12px; padding: 16px; font-size: 13px; color: #e78; line-height: 1.7; text-align: center; }
-  .delete-log-btn { display: block; margin: 18px 14px 0; background: none; border: 1.5px solid #4a2a2a; color: #e74c3c; border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; width: calc(100% - 28px); cursor: pointer; }
+  .delete-log-btn { display: block; margin: 10px 0 0; background: none; border: 1.5px solid #4a2a2a; color: #e74c3c; border-radius: 10px; padding: 10px; font-size: 12px; font-weight: 600; width: 100%; cursor: pointer; }
   .record-card { background: #1c1c1c; margin: 0 14px 10px; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
   .record-card-name { font-size: 15px; font-weight: 700; color: #fff; }
   .record-card-part { font-size: 11px; color: #777; margin-top: 2px; }
@@ -89,6 +90,11 @@
   .best-summary-label { font-size: 12px; color: #aaa; font-weight: 700; }
   .best-summary-value { font-size: 32px; font-weight: 700; color: #FF5A36; margin-top: 4px; }
   .best-summary-date { font-size: 11px; color: #777; margin-top: 4px; }
+  .day-entry-block { border-top: 1px solid #262626; padding-top: 12px; margin-top: 12px; }
+  .day-entry-block:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  .day-entry-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .day-entry-trainer { font-size: 12px; color: #999; font-weight: 700; }
+  .day-entry-satisfaction { font-size: 12px; color: #FFC94A; }
 </style>
 </head>
 <body>
@@ -189,8 +195,8 @@ let exerciseMaster = [];   // [{id,name,body_part,sort_order}]
 let bodyPartGroups = {};   // {胸:[...], 背中:[...]}
 let bodyPartOrderList = []; // 実際に表示する部位の並び順（固定順＋未知の部位）
 let staffList = [];        // [{id,name,nickname}]
-let recentLogs = [];       // for home
-let historyLogs = [];      // for history screen
+let recentLogs = [];       // for home（個別レコードのまま保持）
+let historyLogs = [];      // for history screen（個別レコードのまま保持）
 let allLogsForStats = null; // cache: full logs for exercise-record stats
 let exerciseStatsMap = null; // cache: {key -> {name, body_part, best, history}}
 
@@ -289,7 +295,8 @@ async function init(){
 }
 
 async function loadRecent(){
-  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(5);
+  // ★ 直近の「日付」を5日分表示したいので、少し多めに取得してから日付グルーピングして絞る
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(30);
   recentLogs = data || [];
   renderRecent();
 }
@@ -301,23 +308,47 @@ function getTrainerDisplayText(l){
   return '';
 }
 
+// ★ 同じ日付のレコードを1つのグループにまとめる。グループはlog_date降順、日付内はcreated_at昇順で保持
+function groupLogsByDate(logs){
+  const map = {};
+  const order = [];
+  for (const l of logs) {
+    if (!map[l.log_date]) { map[l.log_date] = []; order.push(l.log_date); }
+    map[l.log_date].push(l);
+  }
+  // created_atで日付内を昇順（入力した順）に並べる
+  for (const d of order) {
+    map[d].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+  return order.map(d => ({ date: d, entries: map[d] }));
+}
+
 function renderRecent(){
   const el = document.getElementById('recent-list');
   if (!recentLogs.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
-  el.innerHTML = recentLogs.map(l => logCardHtml(l)).join('') +
+  const groups = groupLogsByDate(recentLogs).slice(0, 5); // 直近5日分
+  el.innerHTML = groups.map(g => dayCardHtml(g)).join('') +
     '<div style="text-align:center;padding:14px 0;"><span style="color:#FF5A36;font-size:13px;font-weight:700;cursor:pointer;" onclick="openHistory()">すべての記録を見る ›</span></div>';
 }
 
-function logCardHtml(l){
-  const names = (l.exercises || []).map(e => e.name).join('・') || '（種目なし）';
-  const d = new Date(l.log_date + 'T00:00:00');
+// ★ 1日分（複数レコードあり得る）をまとめた1枚のカードHTML
+function dayCardHtml(group){
+  const d = new Date(group.date + 'T00:00:00');
   const dn = ['日','月','火','水','木','金','土'];
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
-  const trainerText = getTrainerDisplayText(l);
-  const timeText = l.booking_time ? ` ${l.booking_time}〜` : '';
-  return `<div class="log-card" onclick="openDetail('${l.id}')">
-    <div class="log-card-top"><span class="log-date">${dateStr}${timeText}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
-    <div class="log-exercises">${names}</div>
+  const allExerciseNames = [];
+  const allTrainers = new Set();
+  for (const l of group.entries) {
+    for (const ex of (l.exercises || [])) allExerciseNames.push(ex.name);
+    const t = getTrainerDisplayText(l);
+    if (t) t.split('・').forEach(n => allTrainers.add(n));
+  }
+  const namesText = allExerciseNames.length ? allExerciseNames.join('・') : '（種目なし）';
+  const trainerText = [...allTrainers].join('・');
+  const countBadge = group.entries.length > 1 ? `<span class="log-count-badge">${group.entries.length}回に分けて入力</span>` : '';
+  return `<div class="log-card" onclick="openDayDetail('${group.date}')">
+    <div class="log-card-top"><span class="log-date">${dateStr}${countBadge}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
+    <div class="log-exercises">${namesText}</div>
   </div>`;
 }
 
@@ -328,54 +359,76 @@ function openHistory(){
 async function loadHistory(){
   const el = document.getElementById('history-content');
   el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>読み込み中...</div>';
-  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(50);
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(200);
   historyLogs = data || [];
   if (!historyLogs.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
-  el.innerHTML = historyLogs.map(l => logCardHtml(l)).join('');
+  const groups = groupLogsByDate(historyLogs);
+  el.innerHTML = groups.map(g => dayCardHtml(g)).join('');
 }
 
-function openDetail(id){
-  const l = [...recentLogs, ...historyLogs].find(x => x.id === id);
-  if (!l) return;
-  renderDetail(l);
+// ★ 指定の日付グループ（複数レコードあり得る）の詳細を開く
+function openDayDetail(date){
+  const allLogs = [...recentLogs, ...historyLogs];
+  const entries = allLogs.filter(l => l.log_date === date);
+  // 重複除去（recentLogsとhistoryLogsで同じレコードが両方に入っている場合があるため）
+  const uniqueEntries = [];
+  const seenIds = new Set();
+  for (const l of entries) {
+    if (!seenIds.has(l.id)) { seenIds.add(l.id); uniqueEntries.push(l); }
+  }
+  uniqueEntries.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (!uniqueEntries.length) return;
+  renderDayDetail(date, uniqueEntries);
   goScreen('screen-detail');
 }
 
-function renderDetail(l){
-  const d = new Date(l.log_date + 'T00:00:00');
+function renderDayDetail(date, entries){
+  const d = new Date(date + 'T00:00:00');
   const dn = ['日','月','火','水','木','金','土'];
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
-  const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
-  const trainerText = getTrainerDisplayText(l) || '—';
-  let exHtml = '';
-  for (const ex of (l.exercises || [])) {
-    const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
-    exHtml += `<div class="exercise-card" style="cursor:default;">
-      <div class="exercise-card-top"><span class="exercise-name">${ex.name}</span></div>
-      <div style="font-size:13px;color:#ccc;line-height:1.9;">${setsStr}</div>
+
+  const blocksHtml = entries.map((l, idx) => {
+    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+    const trainerText = getTrainerDisplayText(l) || '—';
+    let exHtml = '';
+    for (const ex of (l.exercises || [])) {
+      const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
+      exHtml += `<div style="margin-top:10px;"><div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;">${ex.name}</div><div style="font-size:13px;color:#ccc;line-height:1.8;">${setsStr}</div></div>`;
+    }
+    return `<div class="day-entry-block">
+      <div class="day-entry-top">
+        <span class="day-entry-trainer">${entries.length > 1 ? (idx+1)+'回目　' : ''}${l.booking_time ? l.booking_time+'〜　' : ''}担当: ${trainerText}</span>
+        <span class="day-entry-satisfaction">${stars}</span>
+      </div>
+      ${exHtml}
+      ${l.memo ? `<div style="margin-top:10px;font-size:13px;color:#ccc;background:#111;border-radius:8px;padding:10px 12px;line-height:1.6;">${l.memo}</div>` : ''}
+      <button class="delete-log-btn" onclick="deleteLog('${l.id}', '${date}')">${entries.length > 1 ? 'この回の記録だけ削除する' : 'この記録を削除する'}</button>
     </div>`;
-  }
+  }).join('');
+
   document.getElementById('detail-content').innerHTML = `
     <div class="form-block">
-      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}${l.booking_time ? '　'+l.booking_time+'〜' : ''}</span></div>
-      <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${trainerText}</span></div>
-      <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#FFC94A;font-weight:700;">${stars}</span></div>
+      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
+      ${blocksHtml}
     </div>
-    ${exHtml}
-    ${l.memo ? `<div class="form-block"><span class="form-label">メモ</span><div style="font-size:13px;color:#ccc;line-height:1.7;">${l.memo}</div></div>` : ''}
-    <button class="delete-log-btn" onclick="deleteLog('${l.id}')">この記録を削除する</button>
   `;
 }
 
-async function deleteLog(id){
+async function deleteLog(id, date){
   if (!confirm('この記録を削除しますか？元に戻せません。')) return;
   const { error } = await sbClient.from('training_logs').delete().eq('id', id).eq('customer_id', currentCustomer.id);
   if (error) { alert('削除に失敗しました'); return; }
-  goBack();
   await loadRecent();
   await loadHistory();
   allLogsForStats = null; // キャッシュを無効化（次回の種目別記録で再取得）
   exerciseStatsMap = null;
+  // ★ 同じ日付にまだ他の記録が残っていればその日の詳細を再表示、なければ一覧に戻る
+  const remaining = [...recentLogs, ...historyLogs].filter(l => l.log_date === date);
+  if (remaining.length) {
+    openDayDetail(date);
+  } else {
+    goBack();
+  }
 }
 
 // ===== 新規記録フォーム =====
