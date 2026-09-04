@@ -39,6 +39,7 @@
   .form-label { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 10px; display: block; }
   .form-label .required-mark { color: #FF5A36; margin-left: 4px; }
   .date-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; font-size: 15px; }
+  .booking-time-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: #1a2e1a; border: 1px solid #2a4a2a; color: #6fd68f; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 99px; }
   .trainer-buttons, .satisfaction-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill-btn { padding: 10px 16px; border-radius: 99px; border: 1.5px solid #333; background: #111; color: #ccc; font-size: 13px; font-weight: 600; cursor: pointer; }
   .pill-btn.selected { background: #FF5A36; border-color: #FF5A36; color: #fff; }
@@ -125,9 +126,10 @@
   <div class="form-block">
     <span class="form-label">日付</span>
     <input class="date-input" type="date" id="record-date">
+    <div id="booking-time-area"></div>
   </div>
   <div class="form-block">
-    <span class="form-label">担当トレーナー<span class="required-mark">必須</span></span>
+    <span class="form-label">担当トレーナー（自主トレも含め複数選択可）<span class="required-mark">必須</span></span>
     <div class="trainer-buttons" id="trainer-buttons"></div>
   </div>
   <div class="section-label">種目</div>
@@ -193,8 +195,9 @@ let allLogsForStats = null; // cache: full logs for exercise-record stats
 let exerciseStatsMap = null; // cache: {key -> {name, body_part, best, history}}
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
-let selectedTrainer = null;      // null = 未選択（必須）, 'SORA' や '自主トレ' などが入る
+let selectedTrainers = [];       // 空配列 = 未選択（必須）。'SORA' や '自主トレ' などが複数入る
 let selectedSatisfaction = null; // null = 未選択（必須）
+let matchedBookingTime = null;   // その日の予約時刻（HH:MM）、なければnull
 let screenHistoryStack = [];
 
 function todayStr(){
@@ -291,6 +294,13 @@ async function loadRecent(){
   renderRecent();
 }
 
+// ★ 過去データ（trainer_name単一文字列）と新データ（trainers配列）の両方に対応した表示名を返す
+function getTrainerDisplayText(l){
+  if (Array.isArray(l.trainers) && l.trainers.length) return l.trainers.join('・');
+  if (l.trainer_name) return l.trainer_name;
+  return '';
+}
+
 function renderRecent(){
   const el = document.getElementById('recent-list');
   if (!recentLogs.length) { el.innerHTML = '<div class="log-empty">まだ記録がありません</div>'; return; }
@@ -303,8 +313,10 @@ function logCardHtml(l){
   const d = new Date(l.log_date + 'T00:00:00');
   const dn = ['日','月','火','水','木','金','土'];
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  const trainerText = getTrainerDisplayText(l);
+  const timeText = l.booking_time ? ` ${l.booking_time}〜` : '';
   return `<div class="log-card" onclick="openDetail('${l.id}')">
-    <div class="log-card-top"><span class="log-date">${dateStr}</span><span class="log-trainer">${l.trainer_name ? '担当: '+l.trainer_name : ''}</span></div>
+    <div class="log-card-top"><span class="log-date">${dateStr}${timeText}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
     <div class="log-exercises">${names}</div>
   </div>`;
 }
@@ -334,6 +346,7 @@ function renderDetail(l){
   const dn = ['日','月','火','水','木','金','土'];
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
   const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+  const trainerText = getTrainerDisplayText(l) || '—';
   let exHtml = '';
   for (const ex of (l.exercises || [])) {
     const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
@@ -344,8 +357,8 @@ function renderDetail(l){
   }
   document.getElementById('detail-content').innerHTML = `
     <div class="form-block">
-      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
-      <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${l.trainer_name || '—'}</span></div>
+      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}${l.booking_time ? '　'+l.booking_time+'〜' : ''}</span></div>
+      <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${trainerText}</span></div>
       <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#FFC94A;font-weight:700;">${stars}</span></div>
     </div>
     ${exHtml}
@@ -368,32 +381,65 @@ async function deleteLog(id){
 // ===== 新規記録フォーム =====
 async function startNewRecord(){
   selectedExercises = [];
-  selectedTrainer = null;
+  selectedTrainers = [];
   selectedSatisfaction = null;
-  document.getElementById('record-date').value = todayStr();
-  document.getElementById('record-date').max = todayStr();
+  matchedBookingTime = null;
+  const date = todayStr();
+  document.getElementById('record-date').value = date;
+  document.getElementById('record-date').max = date;
   document.getElementById('memo-input').value = '';
+  document.getElementById('booking-time-area').innerHTML = '';
   renderTrainerButtons();
   renderSatisfactionButtons();
   renderExerciseCards();
   goScreen('screen-record');
+  await checkBookingForDate(date);
   // 自己ベストバッジ表示のため裏で統計を読み込んでおく
   await ensureExerciseStats();
 }
 
-async function ensureExerciseStats(){
-  const logs = await loadAllLogsForStats();
-  exerciseStatsMap = buildExerciseStats(logs);
-  renderExerciseCards();
+// ★ 日付が変更されたとき、その日の予約を再チェックする
+async function onRecordDateChange(){
+  const date = document.getElementById('record-date').value;
+  await checkBookingForDate(date);
+}
+
+// ★ 予約システムのbookingsテーブルを読み取り専用で参照（データ・コードは一切変更しない）
+async function checkBookingForDate(date){
+  matchedBookingTime = null;
+  const areaEl = document.getElementById('booking-time-area');
+  areaEl.innerHTML = '';
+  if (!date || !currentCustomer) return;
+  const startOfDay = new Date(date + 'T00:00:00').toISOString();
+  const endOfDay = new Date(date + 'T23:59:59').toISOString();
+  const { data } = await sbClient.from('bookings')
+    .select('scheduled_at')
+    .eq('customer_id', currentCustomer.id)
+    .in('status', ['confirmed', 'completed'])
+    .gte('scheduled_at', startOfDay)
+    .lte('scheduled_at', endOfDay)
+    .order('scheduled_at')
+    .limit(1);
+  if (data && data.length) {
+    const t = new Date(data[0].scheduled_at);
+    matchedBookingTime = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+    areaEl.innerHTML = `<div class="booking-time-badge">📅 この日の予約時間：${matchedBookingTime}〜</div>`;
+  }
 }
 
 function renderTrainerButtons(){
   const el = document.getElementById('trainer-buttons');
   const names = staffList.map(s => s.nickname || s.name);
-  el.innerHTML = names.map(n => `<div class="pill-btn${selectedTrainer===n?' selected':''}" onclick="selectTrainer('${n}')">${n}</div>`).join('') +
-    `<div class="pill-btn${selectedTrainer===SELF_TRAINING_LABEL?' selected':''}" onclick="selectTrainer('${SELF_TRAINING_LABEL}')">${SELF_TRAINING_LABEL}</div>`;
+  el.innerHTML = names.map(n => `<div class="pill-btn${selectedTrainers.includes(n)?' selected':''}" onclick="toggleTrainer('${n}')">${n}</div>`).join('') +
+    `<div class="pill-btn${selectedTrainers.includes(SELF_TRAINING_LABEL)?' selected':''}" onclick="toggleTrainer('${SELF_TRAINING_LABEL}')">${SELF_TRAINING_LABEL}</div>`;
 }
-function selectTrainer(name){ selectedTrainer = name; renderTrainerButtons(); checkSubmitEnabled(); }
+function toggleTrainer(name){
+  const idx = selectedTrainers.indexOf(name);
+  if (idx >= 0) selectedTrainers.splice(idx, 1);
+  else selectedTrainers.push(name);
+  renderTrainerButtons();
+  checkSubmitEnabled();
+}
 
 function renderSatisfactionButtons(){
   const el = document.getElementById('satisfaction-buttons');
@@ -494,7 +540,7 @@ function setValueFromInput(exIdx, sIdx, field, rawValue){
 }
 
 function checkSubmitEnabled(){
-  const ok = selectedExercises.length > 0 && selectedTrainer !== null && selectedSatisfaction !== null;
+  const ok = selectedExercises.length > 0 && selectedTrainers.length > 0 && selectedSatisfaction !== null;
   document.getElementById('submit-btn').disabled = !ok;
 }
 
@@ -503,13 +549,14 @@ async function submitRecord(){
   const date = document.getElementById('record-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!selectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
-  if (selectedTrainer === null) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
+  if (selectedTrainers.length === 0) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
   if (selectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
     customer_id: currentCustomer.id,
     log_date: date,
-    trainer_name: selectedTrainer,
+    trainers: selectedTrainers,
+    booking_time: matchedBookingTime,
     exercises: selectedExercises.map(e => ({ exercise_id: e.exercise_id, name: e.name, sets: e.sets })),
     memo: document.getElementById('memo-input').value.trim() || null,
     satisfaction_score: selectedSatisfaction
@@ -682,7 +729,10 @@ function updateHeader(id){
   document.getElementById('header-back').style.visibility = id === 'screen-home' ? 'hidden' : 'visible';
 }
 
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener('DOMContentLoaded', () => {
+  init();
+  document.getElementById('record-date').addEventListener('change', onRecordDateChange);
+});
 </script>
 </body>
 </html>
