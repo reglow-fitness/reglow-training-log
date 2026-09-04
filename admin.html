@@ -252,6 +252,27 @@ function todayStr(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// ★ 過去データ（trainer_name単一文字列）と新データ（trainers配列）の両方に対応した表示名を返す
+function getTrainerDisplayText(l){
+  if (Array.isArray(l.trainers) && l.trainers.length) return l.trainers.join('・');
+  if (l.trainer_name) return l.trainer_name;
+  return '';
+}
+
+// ★ 同じ日付のレコードを1つのグループにまとめる（log_date降順、グループ内はcreated_at昇順）
+function groupLogsByDate(logs){
+  const map = {};
+  const order = [];
+  for (const l of logs) {
+    if (!map[l.log_date]) { map[l.log_date] = []; order.push(l.log_date); }
+    map[l.log_date].push(l);
+  }
+  for (const d of order) {
+    map[d].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+  return order.map(d => ({ date: d, entries: map[d] }));
+}
+
 async function init(){
   sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const { data: { session } } = await sbClient.auth.getSession();
@@ -386,13 +407,18 @@ function renderCustomerStats(){
   const el = document.getElementById('customer-stats-row');
   if (!currentCustomerLogs.length) { el.innerHTML = ''; return; }
 
+  // 平均満足度
   const withScore = currentCustomerLogs.filter(l => l.satisfaction_score != null);
   const avgScore = withScore.length ? (withScore.reduce((sum, l) => sum + l.satisfaction_score, 0) / withScore.length) : null;
 
+  // トレーナー別対応回数（trainers配列 / trainer_nameどちらにも対応）
   const trainerCounts = {};
   for (const l of currentCustomerLogs) {
-    const name = l.trainer_name || '未選択';
-    trainerCounts[name] = (trainerCounts[name] || 0) + 1;
+    const text = getTrainerDisplayText(l);
+    const names = text ? text.split('・') : ['未選択'];
+    for (const name of names) {
+      trainerCounts[name] = (trainerCounts[name] || 0) + 1;
+    }
   }
   const totalCount = currentCustomerLogs.length;
   const sortedTrainers = Object.entries(trainerCounts).sort((a, b) => b[1] - a[1]);
@@ -428,15 +454,28 @@ function renderCustomerLogs(){
   const el = document.getElementById('customer-logs-list');
   if (!currentCustomerLogs.length) { el.innerHTML = '<div class="empty-msg">記録がありません</div>'; return; }
   const dn = ['日','月','火','水','木','金','土'];
-  el.innerHTML = currentCustomerLogs.map(l => {
-    const d = new Date(l.log_date + 'T00:00:00');
+  const groups = groupLogsByDate(currentCustomerLogs);
+  el.innerHTML = groups.map(g => {
+    const d = new Date(g.date + 'T00:00:00');
     const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
-    const names = (l.exercises || []).map(e => e.name).join('・') || '（種目なし）';
-    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
-    return `<div class="log-card" onclick="openLogDetail('${l.id}')">
-      <div class="log-card-top"><span class="log-date">${dateStr}</span><span class="log-trainer">${l.trainer_name ? '担当: '+l.trainer_name : ''}</span></div>
-      <div class="log-exercises">${names}</div>
-      <div class="log-satisfaction">満足度: ${stars}</div>
+    const allNames = [];
+    const allTrainers = new Set();
+    let scoreSum = 0, scoreCount = 0;
+    for (const l of g.entries) {
+      for (const ex of (l.exercises || [])) allNames.push(ex.name);
+      const t = getTrainerDisplayText(l);
+      if (t) t.split('・').forEach(n => allTrainers.add(n));
+      if (l.satisfaction_score != null) { scoreSum += l.satisfaction_score; scoreCount++; }
+    }
+    const namesText = allNames.length ? allNames.join('・') : '（種目なし）';
+    const trainerText = [...allTrainers].join('・');
+    const countBadge = g.entries.length > 1 ? ` <span style="font-size:10px;color:#999;background:#f0f0f0;padding:2px 8px;border-radius:99px;">${g.entries.length}回に分けて入力</span>` : '';
+    const avgScore = scoreCount ? (scoreSum / scoreCount) : null;
+    const starsText = avgScore != null ? '★'.repeat(Math.round(avgScore)) + '☆'.repeat(5 - Math.round(avgScore)) : '—';
+    return `<div class="log-card" onclick="openLogDetail('${g.date}')">
+      <div class="log-card-top"><span class="log-date">${dateStr}${countBadge}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
+      <div class="log-exercises">${namesText}</div>
+      <div class="log-satisfaction">満足度: ${starsText}</div>
     </div>`;
   }).join('');
 }
@@ -446,24 +485,42 @@ function backToCustomerList(){
   document.getElementById('customer-list-view').style.display = 'block';
 }
 
-function openLogDetail(logId){
-  const l = currentCustomerLogs.find(x => x.id === logId) || (window._checkinLogsCache || []).find(x => x.id === logId);
-  if (!l) return;
+// ★ dateを受け取り、その日の全レコードをまとめて表示する（会員別記録タブから開かれる想定）
+function openLogDetail(date){
+  const entries = currentCustomerLogs.filter(l => l.log_date === date).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (!entries.length) return;
+  renderLogDetailModal(date, entries);
+}
+
+// ★ 予約×記録チェックタブから開く場合はレコード単体（1件）を渡す
+function openSingleLogDetail(log){
+  renderLogDetailModal(log.log_date, [log]);
+}
+
+function renderLogDetailModal(date, entries){
   const dn = ['日','月','火','水','木','金','土'];
-  const d = new Date(l.log_date + 'T00:00:00');
+  const d = new Date(date + 'T00:00:00');
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
-  const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
-  const exHtml = (l.exercises || []).map(ex => {
-    const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
-    return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div><div class="ex-block-sets">${setsStr}</div></div>`;
+
+  const blocksHtml = entries.map((l, idx) => {
+    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
+    const trainerText = getTrainerDisplayText(l) || '—';
+    const exHtml = (l.exercises || []).map(ex => {
+      const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
+      return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div><div class="ex-block-sets">${setsStr}</div></div>`;
+    }).join('');
+    return `<div style="margin-top:${idx > 0 ? '18px' : '0'};padding-top:${idx > 0 ? '14px' : '0'};border-top:${idx > 0 ? '1px solid #eee' : 'none'};">
+      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目の担当' : '担当トレーナー'}</span><span style="font-weight:700;">${trainerText}${l.booking_time ? '（'+l.booking_time+'〜）' : ''}</span></div>
+      <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#d99a00;font-weight:700;">${stars}</span></div>
+      ${exHtml}
+      ${l.memo ? `<div class="memo-block">${l.memo}</div>` : ''}
+    </div>`;
   }).join('');
+
   document.getElementById('detail-modal-content').innerHTML = `
     <div class="detail-modal-close" onclick="closeDetailModal()">✕ 閉じる</div>
     <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
-    <div class="detail-row"><span style="color:#888;">担当トレーナー</span><span style="font-weight:700;">${l.trainer_name || '—'}</span></div>
-    <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#d99a00;font-weight:700;">${stars}</span></div>
-    ${exHtml}
-    ${l.memo ? `<div class="memo-block">${l.memo}</div>` : ''}
+    ${blocksHtml}
   `;
   document.getElementById('detail-modal-bg').classList.add('active');
 }
@@ -523,9 +580,9 @@ async function loadCheckin(){
     const t = new Date(b.scheduled_at);
     const timeStr = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
     const trainerNote = isDone
-      ? `<div class="checkin-trainer-note">記録上の担当: ${bookingLogs.map(l => l.trainer_name || '未選択').join('・')}</div>`
+      ? `<div class="checkin-trainer-note">記録上の担当: ${bookingLogs.map(l => getTrainerDisplayText(l) || '未選択').join('・')}</div>`
       : '';
-    return `<div class="checkin-row ${isDone ? 'done' : 'missing'}" ${isDone ? `onclick="openLogDetail('${bookingLogs[0].id}')" style="cursor:pointer;"` : ''}>
+    return `<div class="checkin-row ${isDone ? 'done' : 'missing'}" ${isDone ? `onclick='openSingleLogDetail(${JSON.stringify(bookingLogs[0])})' style="cursor:pointer;"` : ''}>
       <div class="checkin-left">
         <div class="checkin-name">${timeStr} ${name}</div>
         <div class="checkin-meta">${b.menu_name || 'セミパーソナル'}</div>
