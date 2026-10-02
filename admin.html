@@ -46,8 +46,9 @@
   .blocked-badge { font-size: 10px; background: #ffe0e0; color: #c0392b; padding: 2px 8px; border-radius: 99px; font-weight: 700; flex-shrink: 0; }
 
   .back-link { color: #FF5A36; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 12px; display: inline-block; }
-  .customer-detail-header { background: white; border-radius: 12px; padding: 16px; margin-bottom: 14px; border: 1px solid #eee; }
+  .customer-detail-header { background: white; border-radius: 12px; padding: 16px; margin-bottom: 14px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
   .customer-detail-name { font-size: 17px; font-weight: 700; }
+  .add-record-btn-admin { background: #FF5A36; color: white; border: none; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
 
   .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
   .stat-card { background: white; border-radius: 12px; padding: 16px; border: 1px solid #eee; }
@@ -67,6 +68,7 @@
   .log-trainer { font-size: 11px; color: #999; }
   .log-exercises { font-size: 13px; color: #444; margin-top: 6px; }
   .log-satisfaction { font-size: 12px; color: #d99a00; margin-top: 4px; }
+  .staff-entry-badge { font-size: 10px; color: #1a6fb5; background: #e8f1fc; padding: 2px 8px; border-radius: 99px; font-weight: 700; margin-left: 6px; }
 
   .detail-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; }
   .detail-modal-bg.active { display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -114,6 +116,32 @@
   .checkin-status-badge.done { background: #e6f9ee; color: #1a9c53; }
   .checkin-status-badge.missing { background: #ffe0e0; color: #c0392b; }
   .checkin-trainer-note { font-size: 10px; color: #aaa; margin-top: 2px; }
+
+  /* 記録入力フォーム（スタッフ代理入力） */
+  .record-form-modal { background: white; border-radius: 14px; padding: 20px; max-width: 460px; width: 100%; max-height: 88vh; overflow-y: auto; }
+  .record-form-block { margin-bottom: 16px; }
+  .record-form-label { font-size: 12px; color: #888; font-weight: 700; margin-bottom: 8px; display: block; }
+  .record-form-label .required-mark { color: #FF5A36; margin-left: 4px; }
+  .record-date-input { width: 100%; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .rf-pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rf-pill { padding: 8px 14px; border-radius: 99px; border: 1.5px solid #ddd; background: white; color: #555; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .rf-pill.selected { background: #FF5A36; border-color: #FF5A36; color: white; }
+  .rf-star { font-size: 22px; cursor: pointer; color: #ddd; }
+  .rf-star.filled { color: #FFC94A; }
+  .rf-exercise-card { background: #f7f7f7; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .rf-exercise-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .rf-exercise-name { font-size: 14px; font-weight: 700; }
+  .rf-exercise-remove { font-size: 11px; color: #999; cursor: pointer; }
+  .rf-set-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
+  .rf-stepper { width: 26px; height: 26px; border-radius: 6px; background: #e8e8e8; border: none; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .rf-set-value { width: 48px; text-align: center; font-size: 14px; font-weight: 700; border: 1px solid #ddd; border-radius: 6px; padding: 4px 2px; }
+  .rf-set-unit { font-size: 11px; color: #888; }
+  .rf-set-del { margin-left: auto; color: #999; cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .rf-add-set { font-size: 11px; color: #FF5A36; font-weight: 700; cursor: pointer; margin-top: 4px; }
+  .rf-add-exercise-select { width: 100%; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; }
+  .rf-memo { width: 100%; min-height: 60px; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+  .rf-submit-btn { width: 100%; padding: 13px; background: #FF5A36; color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 6px; }
+  .rf-submit-btn:disabled { background: #ccc; cursor: default; }
 </style>
 </head>
 <body>
@@ -151,6 +179,7 @@
         <span class="back-link" onclick="backToCustomerList()">‹ 会員一覧に戻る</span>
         <div class="customer-detail-header">
           <div class="customer-detail-name" id="detail-customer-name"></div>
+          <button class="add-record-btn-admin" onclick="openRecordForm()">＋ 記録を追加</button>
         </div>
         <div class="stats-row" id="customer-stats-row"></div>
         <div class="section-label">記録一覧</div>
@@ -201,9 +230,41 @@
   <div class="detail-modal" id="detail-modal-content"></div>
 </div>
 
+<!-- 記録入力モーダル（スタッフ代理入力） -->
+<div class="detail-modal-bg" id="record-form-modal-bg" onclick="if(event.target===this)closeRecordForm()">
+  <div class="record-form-modal">
+    <div class="detail-modal-close" onclick="closeRecordForm()">✕ 閉じる</div>
+    <div class="record-form-block">
+      <span class="record-form-label">日付<span class="required-mark">必須</span></span>
+      <input class="record-date-input" type="date" id="rf-date">
+    </div>
+    <div class="record-form-block">
+      <span class="record-form-label">担当トレーナー（自主トレも含め複数選択可）<span class="required-mark">必須</span></span>
+      <div class="rf-pill-row" id="rf-trainer-buttons"></div>
+    </div>
+    <div class="record-form-block">
+      <span class="record-form-label">種目</span>
+      <div id="rf-exercise-cards"></div>
+      <select class="rf-add-exercise-select" id="rf-exercise-select" onchange="rfAddExerciseFromSelect()">
+        <option value="">＋ 種目を追加...</option>
+      </select>
+    </div>
+    <div class="record-form-block">
+      <span class="record-form-label">満足度<span class="required-mark">必須</span></span>
+      <div class="rf-pill-row" id="rf-satisfaction-buttons"></div>
+    </div>
+    <div class="record-form-block">
+      <span class="record-form-label">メモ（任意）</span>
+      <textarea class="rf-memo" id="rf-memo" placeholder="体調やフォームの気づきなど"></textarea>
+    </div>
+    <button class="rf-submit-btn" id="rf-submit-btn" onclick="submitRecordForm()">この内容で記録する</button>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://plapbyvgthymszrzbsgl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-FVZ_yzggmRe8cTv4oGXJg_4zqIZEIc';
+const SELF_TRAINING_LABEL = '自主トレ';
 
 // 部位の固定表示順（この配列にない部位は末尾に五十音順で追加される）
 const BODYPART_ORDER = ['胸', '背中', '肩', '脚', '腕', '腹', 'その他'];
@@ -213,6 +274,7 @@ let allCustomers = [];
 let currentCustomer = null;
 let currentCustomerLogs = [];
 let exerciseMaster = [];
+let staffList = [];
 
 // 五十音の固定並び順（この配列順で表示・グループ化する。#（判定不可）は必ず最後）
 const GOJUON_CHARS = ['あ','い','う','え','お','か','き','く','け','こ','さ','し','す','せ','そ','た','ち','つ','て','と','な','に','ぬ','ね','の','は','ひ','ふ','へ','ほ','ま','み','む','め','も','や','ゆ','よ','ら','り','る','れ','ろ','わ','を','ん'];
@@ -238,7 +300,6 @@ function toHiraganaChar(ch){
 }
 
 function getGojuonLabel(customer){
-  // ふりがなが登録されていればそれを優先。なければ名前から推定（漢字等は判定できず#になる）
   const source = (customer.furigana && customer.furigana.trim()) ? customer.furigana.trim() : (customer.name || '').trim();
   if (!source) return '#';
   let first = toHiraganaChar(source[0]);
@@ -252,14 +313,12 @@ function todayStr(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// ★ 過去データ（trainer_name単一文字列）と新データ（trainers配列）の両方に対応した表示名を返す
 function getTrainerDisplayText(l){
   if (Array.isArray(l.trainers) && l.trainers.length) return l.trainers.join('・');
   if (l.trainer_name) return l.trainer_name;
   return '';
 }
 
-// ★ 同じ日付のレコードを1つのグループにまとめる（log_date降順、グループ内はcreated_at昇順）
 function groupLogsByDate(logs){
   const map = {};
   const order = [];
@@ -305,6 +364,7 @@ async function showMainScreen(){
   document.getElementById('checkin-date').max = todayStr();
   await loadCustomers();
   await loadExerciseMaster();
+  await loadStaffList();
 }
 
 function switchTab(tab){
@@ -314,6 +374,11 @@ function switchTab(tab){
   document.getElementById('panel-customers').style.display = tab === 'customers' ? 'block' : 'none';
   document.getElementById('panel-checkin').style.display = tab === 'checkin' ? 'block' : 'none';
   document.getElementById('panel-exercises').style.display = tab === 'exercises' ? 'block' : 'none';
+}
+
+async function loadStaffList(){
+  const { data } = await sbClient.from('staff').select('id,name,nickname').eq('is_active', true).order('name');
+  staffList = data || [];
 }
 
 // ===== 会員別記録 =====
@@ -397,7 +462,11 @@ async function openCustomerDetail(customerId){
   document.getElementById('detail-customer-name').textContent = (c.name || '（名前未設定）') + (c.is_blocked ? '（ブロック中）' : '');
   document.getElementById('customer-stats-row').innerHTML = '';
   document.getElementById('customer-logs-list').innerHTML = '<div class="loading">読み込み中...</div>';
-  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', customerId).order('log_date', { ascending: false }).order('created_at', { ascending: false });
+  await reloadCurrentCustomerLogs();
+}
+
+async function reloadCurrentCustomerLogs(){
+  const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false });
   currentCustomerLogs = data || [];
   renderCustomerStats();
   renderCustomerLogs();
@@ -407,11 +476,9 @@ function renderCustomerStats(){
   const el = document.getElementById('customer-stats-row');
   if (!currentCustomerLogs.length) { el.innerHTML = ''; return; }
 
-  // 平均満足度
   const withScore = currentCustomerLogs.filter(l => l.satisfaction_score != null);
   const avgScore = withScore.length ? (withScore.reduce((sum, l) => sum + l.satisfaction_score, 0) / withScore.length) : null;
 
-  // トレーナー別対応回数（trainers配列 / trainer_nameどちらにも対応）
   const trainerCounts = {};
   for (const l of currentCustomerLogs) {
     const text = getTrainerDisplayText(l);
@@ -461,19 +528,22 @@ function renderCustomerLogs(){
     const allNames = [];
     const allTrainers = new Set();
     let scoreSum = 0, scoreCount = 0;
+    let hasStaffEntry = false;
     for (const l of g.entries) {
       for (const ex of (l.exercises || [])) allNames.push(ex.name);
       const t = getTrainerDisplayText(l);
       if (t) t.split('・').forEach(n => allTrainers.add(n));
       if (l.satisfaction_score != null) { scoreSum += l.satisfaction_score; scoreCount++; }
+      if (l.entered_by_staff) hasStaffEntry = true;
     }
     const namesText = allNames.length ? allNames.join('・') : '（種目なし）';
     const trainerText = [...allTrainers].join('・');
     const countBadge = g.entries.length > 1 ? ` <span style="font-size:10px;color:#999;background:#f0f0f0;padding:2px 8px;border-radius:99px;">${g.entries.length}回に分けて入力</span>` : '';
+    const staffBadge = hasStaffEntry ? '<span class="staff-entry-badge">スタッフ入力</span>' : '';
     const avgScore = scoreCount ? (scoreSum / scoreCount) : null;
     const starsText = avgScore != null ? '★'.repeat(Math.round(avgScore)) + '☆'.repeat(5 - Math.round(avgScore)) : '—';
     return `<div class="log-card" onclick="openLogDetail('${g.date}')">
-      <div class="log-card-top"><span class="log-date">${dateStr}${countBadge}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
+      <div class="log-card-top"><span class="log-date">${dateStr}${countBadge}${staffBadge}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
       <div class="log-exercises">${namesText}</div>
       <div class="log-satisfaction">満足度: ${starsText}</div>
     </div>`;
@@ -485,14 +555,12 @@ function backToCustomerList(){
   document.getElementById('customer-list-view').style.display = 'block';
 }
 
-// ★ dateを受け取り、その日の全レコードをまとめて表示する（会員別記録タブから開かれる想定）
 function openLogDetail(date){
   const entries = currentCustomerLogs.filter(l => l.log_date === date).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   if (!entries.length) return;
   renderLogDetailModal(date, entries);
 }
 
-// ★ 予約×記録チェックタブから開く場合はレコード単体（1件）を渡す
 function openSingleLogDetail(log){
   renderLogDetailModal(log.log_date, [log]);
 }
@@ -510,7 +578,7 @@ function renderLogDetailModal(date, entries){
       return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div><div class="ex-block-sets">${setsStr}</div></div>`;
     }).join('');
     return `<div style="margin-top:${idx > 0 ? '18px' : '0'};padding-top:${idx > 0 ? '14px' : '0'};border-top:${idx > 0 ? '1px solid #eee' : 'none'};">
-      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目の担当' : '担当トレーナー'}</span><span style="font-weight:700;">${trainerText}${l.booking_time ? '（'+l.booking_time+'〜）' : ''}</span></div>
+      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目の担当' : '担当トレーナー'}</span><span style="font-weight:700;">${trainerText}${l.booking_time ? '（'+l.booking_time+'〜）' : ''}${l.entered_by_staff ? '<span class="staff-entry-badge">スタッフ入力</span>' : ''}</span></div>
       <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#d99a00;font-weight:700;">${stars}</span></div>
       ${exHtml}
       ${l.memo ? `<div class="memo-block">${l.memo}</div>` : ''}
@@ -528,6 +596,170 @@ function closeDetailModal(){
   document.getElementById('detail-modal-bg').classList.remove('active');
 }
 
+// ===== 記録入力フォーム（スタッフ代理入力） =====
+let rfSelectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
+let rfSelectedTrainers = [];
+let rfSelectedSatisfaction = null;
+
+function openRecordForm(){
+  if (!currentCustomer) return;
+  rfSelectedExercises = [];
+  rfSelectedTrainers = [];
+  rfSelectedSatisfaction = null;
+  document.getElementById('rf-date').value = todayStr();
+  document.getElementById('rf-date').max = todayStr();
+  document.getElementById('rf-memo').value = '';
+  rfRenderTrainerButtons();
+  rfRenderSatisfactionButtons();
+  rfRenderExerciseCards();
+  rfRenderExerciseSelect();
+  document.getElementById('record-form-modal-bg').classList.add('active');
+}
+function closeRecordForm(){
+  document.getElementById('record-form-modal-bg').classList.remove('active');
+}
+
+function rfRenderTrainerButtons(){
+  const el = document.getElementById('rf-trainer-buttons');
+  const names = staffList.map(s => s.nickname || s.name);
+  el.innerHTML = names.map(n => `<div class="rf-pill${rfSelectedTrainers.includes(n)?' selected':''}" onclick="rfToggleTrainer('${n}')">${n}</div>`).join('') +
+    `<div class="rf-pill${rfSelectedTrainers.includes(SELF_TRAINING_LABEL)?' selected':''}" onclick="rfToggleTrainer('${SELF_TRAINING_LABEL}')">${SELF_TRAINING_LABEL}</div>`;
+}
+function rfToggleTrainer(name){
+  const idx = rfSelectedTrainers.indexOf(name);
+  if (idx >= 0) rfSelectedTrainers.splice(idx, 1);
+  else rfSelectedTrainers.push(name);
+  rfRenderTrainerButtons();
+  rfCheckSubmitEnabled();
+}
+
+function rfRenderSatisfactionButtons(){
+  const el = document.getElementById('rf-satisfaction-buttons');
+  let html = '';
+  for (let i = 1; i <= 5; i++) {
+    html += `<span class="rf-star${rfSelectedSatisfaction>=i?' filled':''}" onclick="rfSelectSatisfaction(${i})">★</span>`;
+  }
+  el.innerHTML = html;
+}
+function rfSelectSatisfaction(n){ rfSelectedSatisfaction = n; rfRenderSatisfactionButtons(); rfCheckSubmitEnabled(); }
+
+function rfRenderExerciseSelect(){
+  const sel = document.getElementById('rf-exercise-select');
+  const groups = {};
+  for (const ex of exerciseMaster) {
+    if (!groups[ex.body_part]) groups[ex.body_part] = [];
+    groups[ex.body_part].push(ex);
+  }
+  for (const bp in groups) groups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  const knownParts = BODYPART_ORDER.filter(bp => groups[bp]);
+  const unknownParts = Object.keys(groups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
+  const order = [...knownParts, ...unknownParts];
+  let html = '<option value="">＋ 種目を追加...</option>';
+  for (const bp of order) {
+    html += `<optgroup label="${bp}">`;
+    html += groups[bp].map(ex => `<option value="${ex.id}">${ex.name}</option>`).join('');
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+}
+function rfAddExerciseFromSelect(){
+  const sel = document.getElementById('rf-exercise-select');
+  const id = sel.value;
+  if (!id) return;
+  const ex = exerciseMaster.find(e => e.id === id);
+  if (!ex) return;
+  rfSelectedExercises.push({ exercise_id: ex.id, name: ex.name, sets: [{ weight: 20, reps: 10 }] });
+  sel.value = '';
+  rfRenderExerciseCards();
+}
+function rfRemoveExercise(idx){
+  rfSelectedExercises.splice(idx, 1);
+  rfRenderExerciseCards();
+}
+function rfAddSet(exIdx){
+  const sets = rfSelectedExercises[exIdx].sets;
+  const last = sets[sets.length - 1] || { weight: 20, reps: 10 };
+  sets.push({ weight: last.weight, reps: last.reps });
+  rfRenderExerciseCards();
+}
+function rfRemoveSet(exIdx, sIdx){
+  const sets = rfSelectedExercises[exIdx].sets;
+  if (sets.length <= 1) { rfRemoveExercise(exIdx); return; }
+  sets.splice(sIdx, 1);
+  rfRenderExerciseCards();
+}
+function rfAdjustSet(exIdx, sIdx, field, delta){
+  const s = rfSelectedExercises[exIdx].sets[sIdx];
+  let v = s[field] + delta;
+  if (field === 'weight') v = Math.max(0, Math.round(v * 10) / 10);
+  else v = Math.max(0, v);
+  s[field] = v;
+  rfRenderExerciseCards();
+}
+function rfSetValueFromInput(exIdx, sIdx, field, rawValue){
+  let v = parseFloat(String(rawValue).replace(/[^0-9.]/g, ''));
+  if (isNaN(v) || v < 0) v = 0;
+  v = field === 'weight' ? Math.round(v * 10) / 10 : Math.round(v);
+  rfSelectedExercises[exIdx].sets[sIdx][field] = v;
+  rfRenderExerciseCards();
+}
+function rfRenderExerciseCards(){
+  const el = document.getElementById('rf-exercise-cards');
+  el.innerHTML = rfSelectedExercises.map((ex, exIdx) => {
+    const setsHtml = ex.sets.map((s, sIdx) => `
+      <div class="rf-set-row">
+        <span style="font-size:11px;color:#999;width:16px;">${sIdx+1}</span>
+        <button class="rf-stepper" onclick="rfAdjustSet(${exIdx},${sIdx},'weight',-2.5)">－</button>
+        <input class="rf-set-value" type="text" inputmode="decimal" value="${s.weight}" onfocus="this.select()" onchange="rfSetValueFromInput(${exIdx},${sIdx},'weight',this.value)">
+        <span class="rf-set-unit">kg</span>
+        <button class="rf-stepper" onclick="rfAdjustSet(${exIdx},${sIdx},'weight',2.5)">＋</button>
+        <button class="rf-stepper" onclick="rfAdjustSet(${exIdx},${sIdx},'reps',-1)">－</button>
+        <input class="rf-set-value" type="text" inputmode="numeric" value="${s.reps}" onfocus="this.select()" onchange="rfSetValueFromInput(${exIdx},${sIdx},'reps',this.value)">
+        <span class="rf-set-unit">回</span>
+        <button class="rf-stepper" onclick="rfAdjustSet(${exIdx},${sIdx},'reps',1)">＋</button>
+        <span class="rf-set-del" onclick="rfRemoveSet(${exIdx},${sIdx})">✕</span>
+      </div>
+    `).join('');
+    return `<div class="rf-exercise-card">
+      <div class="rf-exercise-top">
+        <span class="rf-exercise-name">${ex.name}</span>
+        <span class="rf-exercise-remove" onclick="rfRemoveExercise(${exIdx})">削除</span>
+      </div>
+      ${setsHtml}
+      <div class="rf-add-set" onclick="rfAddSet(${exIdx})">＋ セット追加</div>
+    </div>`;
+  }).join('');
+  rfCheckSubmitEnabled();
+}
+
+function rfCheckSubmitEnabled(){
+  const ok = rfSelectedExercises.length > 0 && rfSelectedTrainers.length > 0 && rfSelectedSatisfaction !== null;
+  document.getElementById('rf-submit-btn').disabled = !ok;
+}
+
+async function submitRecordForm(){
+  const btn = document.getElementById('rf-submit-btn');
+  const date = document.getElementById('rf-date').value;
+  if (!date) { alert('日付を選択してください'); return; }
+  if (!rfSelectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
+  if (rfSelectedTrainers.length === 0) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
+  if (rfSelectedSatisfaction === null) { alert('満足度を選択してください'); return; }
+  btn.disabled = true; btn.textContent = '送信中...';
+  const { error } = await sbClient.from('training_logs').insert({
+    customer_id: currentCustomer.id,
+    log_date: date,
+    trainers: rfSelectedTrainers,
+    exercises: rfSelectedExercises.map(e => ({ exercise_id: e.exercise_id, name: e.name, sets: e.sets })),
+    memo: document.getElementById('rf-memo').value.trim() || null,
+    satisfaction_score: rfSelectedSatisfaction,
+    entered_by_staff: true
+  });
+  btn.disabled = false; btn.textContent = 'この内容で記録する';
+  if (error) { alert('記録に失敗しました。もう一度お試しください。'); return; }
+  closeRecordForm();
+  await reloadCurrentCustomerLogs();
+}
+
 // ===== 予約×記録チェック =====
 async function loadCheckin(){
   const date = document.getElementById('checkin-date').value;
@@ -538,7 +770,6 @@ async function loadCheckin(){
   const startOfDay = new Date(date + 'T00:00:00').toISOString();
   const endOfDay = new Date(date + 'T23:59:59').toISOString();
 
-  // ★ 予約システムのbookingsテーブルを読み取り専用で参照（データ・コードは一切変更しない）
   const { data: bookings, error: bookingsErr } = await sbClient
     .from('bookings')
     .select('id, customer_id, menu_name, scheduled_at, status, menus(ticket_cost)')
@@ -550,7 +781,6 @@ async function loadCheckin(){
   if (bookingsErr) { contentEl.innerHTML = '<div class="empty-msg">予約データの取得に失敗しました</div>'; return; }
   if (!bookings || !bookings.length) { contentEl.innerHTML = '<div class="empty-msg">この日の予約はありません</div>'; return; }
 
-  // ★ セミパーソナル（ticket_cost > 0、担当トレーナーがつくメニュー）のみ対象にする
   const targetBookings = bookings.filter(b => (b.menus?.ticket_cost || 0) > 0);
   if (!targetBookings.length) { contentEl.innerHTML = '<div class="empty-msg">この日はセミパーソナルの予約がありません</div>'; return; }
 
@@ -650,6 +880,7 @@ async function addExercise(){
   if (error) { alert('追加に失敗しました'); return; }
   document.getElementById('new-ex-name').value = '';
   await loadExerciseMaster();
+  rfRenderExerciseSelect();
 }
 
 async function updateExerciseName(id, newName){
@@ -658,6 +889,7 @@ async function updateExerciseName(id, newName){
   const { error } = await sbClient.from('exercise_master').update({ name: newName }).eq('id', id);
   if (error) { alert('更新に失敗しました'); return; }
   await loadExerciseMaster();
+  rfRenderExerciseSelect();
 }
 
 async function deleteExercise(id, name){
@@ -665,6 +897,7 @@ async function deleteExercise(id, name){
   const { error } = await sbClient.from('exercise_master').delete().eq('id', id);
   if (error) { alert('削除に失敗しました'); return; }
   await loadExerciseMaster();
+  rfRenderExerciseSelect();
 }
 
 window.addEventListener('DOMContentLoaded', init);
