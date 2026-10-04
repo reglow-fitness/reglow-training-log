@@ -239,7 +239,7 @@
       <input class="record-date-input" type="date" id="rf-date">
     </div>
     <div class="record-form-block">
-      <span class="record-form-label">担当トレーナー（自主トレも含め複数選択可）<span class="required-mark">必須</span></span>
+      <span class="record-form-label">担当トレーナー（自主トレも含め複数選択可・任意）</span>
       <div class="rf-pill-row" id="rf-trainer-buttons"></div>
     </div>
     <div class="record-form-block">
@@ -733,7 +733,7 @@ function rfRenderExerciseCards(){
 }
 
 function rfCheckSubmitEnabled(){
-  const ok = rfSelectedExercises.length > 0 && rfSelectedTrainers.length > 0 && rfSelectedSatisfaction !== null;
+  const ok = rfSelectedExercises.length > 0 && rfSelectedSatisfaction !== null;
   document.getElementById('rf-submit-btn').disabled = !ok;
 }
 
@@ -742,7 +742,6 @@ async function submitRecordForm(){
   const date = document.getElementById('rf-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!rfSelectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
-  if (rfSelectedTrainers.length === 0) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
   if (rfSelectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
