@@ -41,11 +41,9 @@
   .form-label .required-mark { color: #FF5A36; margin-left: 4px; }
   .date-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #111; color: #fff; font-size: 15px; }
   .booking-time-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: #1a2e1a; border: 1px solid #2a4a2a; color: #6fd68f; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 99px; }
-  .trainer-buttons, .satisfaction-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .trainer-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill-btn { padding: 10px 16px; border-radius: 99px; border: 1.5px solid #333; background: #111; color: #ccc; font-size: 13px; font-weight: 600; cursor: pointer; }
   .pill-btn.selected { background: #FF5A36; border-color: #FF5A36; color: #fff; }
-  .star-btn { font-size: 26px; cursor: pointer; color: #333; }
-  .star-btn.filled { color: #FFC94A; }
   .exercise-card { margin: 14px; background: #1c1c1c; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; }
   .exercise-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }
   .exercise-name-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -94,7 +92,6 @@
   .day-entry-block:first-child { border-top: none; padding-top: 0; margin-top: 0; }
   .day-entry-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .day-entry-trainer { font-size: 12px; color: #999; font-weight: 700; }
-  .day-entry-satisfaction { font-size: 12px; color: #FFC94A; }
 </style>
 </head>
 <body>
@@ -141,10 +138,6 @@
   <div class="section-label">種目</div>
   <div id="exercise-cards"></div>
   <div class="add-exercise-btn" onclick="goScreen('screen-picker')">＋ 種目を追加</div>
-  <div class="form-block">
-    <span class="form-label">今回の満足度<span class="required-mark">必須</span></span>
-    <div class="satisfaction-buttons" id="satisfaction-buttons"></div>
-  </div>
   <div class="form-block">
     <span class="form-label">メモ（任意）</span>
     <textarea class="memo-input" id="memo-input" placeholder="体調やフォームの気づきなど"></textarea>
@@ -202,7 +195,6 @@ let exerciseStatsMap = null; // cache: {key -> {name, body_part, best, history}}
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
 let selectedTrainers = [];       // 空配列でもOK（任意）。'SORA' や '自主トレ' などが複数入る
-let selectedSatisfaction = null; // null = 未選択（必須）
 let matchedBookingTime = null;   // その日の予約時刻（HH:MM）、なければnull
 let screenHistoryStack = [];
 
@@ -383,7 +375,6 @@ function renderDayDetail(date, entries){
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
 
   const blocksHtml = entries.map((l, idx) => {
-    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
     const trainerText = getTrainerDisplayText(l) || '—';
     let exHtml = '';
     for (const ex of (l.exercises || [])) {
@@ -393,7 +384,6 @@ function renderDayDetail(date, entries){
     return `<div class="day-entry-block">
       <div class="day-entry-top">
         <span class="day-entry-trainer">${entries.length > 1 ? (idx+1)+'回目　' : ''}${l.booking_time ? l.booking_time+'〜　' : ''}担当: ${trainerText}</span>
-        <span class="day-entry-satisfaction">${stars}</span>
       </div>
       ${exHtml}
       ${l.memo ? `<div style="margin-top:10px;font-size:13px;color:#ccc;background:#111;border-radius:8px;padding:10px 12px;line-height:1.6;">${l.memo}</div>` : ''}
@@ -430,7 +420,6 @@ async function deleteLog(id, date){
 async function startNewRecord(){
   selectedExercises = [];
   selectedTrainers = [];
-  selectedSatisfaction = null;
   matchedBookingTime = null;
   const date = todayStr();
   document.getElementById('record-date').value = date;
@@ -438,7 +427,6 @@ async function startNewRecord(){
   document.getElementById('memo-input').value = '';
   document.getElementById('booking-time-area').innerHTML = '';
   renderTrainerButtons();
-  renderSatisfactionButtons();
   renderExerciseCards();
   goScreen('screen-record');
   await checkBookingForDate(date);
@@ -488,16 +476,6 @@ function toggleTrainer(name){
   renderTrainerButtons();
   checkSubmitEnabled();
 }
-
-function renderSatisfactionButtons(){
-  const el = document.getElementById('satisfaction-buttons');
-  let html = '';
-  for (let i = 1; i <= 5; i++) {
-    html += `<span class="star-btn${selectedSatisfaction>=i?' filled':''}" onclick="selectSatisfaction(${i})">★</span>`;
-  }
-  el.innerHTML = html;
-}
-function selectSatisfaction(n){ selectedSatisfaction = n; renderSatisfactionButtons(); checkSubmitEnabled(); }
 
 function getBestBadgeHtml(exerciseIdOrName){
   if (!exerciseStatsMap) return '';
@@ -588,7 +566,7 @@ function setValueFromInput(exIdx, sIdx, field, rawValue){
 }
 
 function checkSubmitEnabled(){
-  const ok = selectedExercises.length > 0 && selectedSatisfaction !== null;
+  const ok = selectedExercises.length > 0;
   document.getElementById('submit-btn').disabled = !ok;
 }
 
@@ -597,7 +575,6 @@ async function submitRecord(){
   const date = document.getElementById('record-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!selectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
-  if (selectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
     customer_id: currentCustomer.id,
@@ -605,8 +582,7 @@ async function submitRecord(){
     trainers: selectedTrainers,
     booking_time: matchedBookingTime,
     exercises: selectedExercises.map(e => ({ exercise_id: e.exercise_id, name: e.name, sets: e.sets })),
-    memo: document.getElementById('memo-input').value.trim() || null,
-    satisfaction_score: selectedSatisfaction
+    memo: document.getElementById('memo-input').value.trim() || null
   });
   btn.disabled = false; btn.textContent = 'この内容で記録する';
   if (error) { alert('記録に失敗しました。もう一度お試しください。'); return; }
