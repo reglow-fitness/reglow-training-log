@@ -135,7 +135,7 @@
     <div id="booking-time-area"></div>
   </div>
   <div class="form-block">
-    <span class="form-label">担当トレーナー（自主トレも含め複数選択可）<span class="required-mark">必須</span></span>
+    <span class="form-label">担当トレーナー（自主トレも含め複数選択可・任意）</span>
     <div class="trainer-buttons" id="trainer-buttons"></div>
   </div>
   <div class="section-label">種目</div>
@@ -201,7 +201,7 @@ let allLogsForStats = null; // cache: full logs for exercise-record stats
 let exerciseStatsMap = null; // cache: {key -> {name, body_part, best, history}}
 
 let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
-let selectedTrainers = [];       // 空配列 = 未選択（必須）。'SORA' や '自主トレ' などが複数入る
+let selectedTrainers = [];       // 空配列でもOK（任意）。'SORA' や '自主トレ' などが複数入る
 let selectedSatisfaction = null; // null = 未選択（必須）
 let matchedBookingTime = null;   // その日の予約時刻（HH:MM）、なければnull
 let screenHistoryStack = [];
@@ -295,7 +295,6 @@ async function init(){
 }
 
 async function loadRecent(){
-  // ★ 直近の「日付」を5日分表示したいので、少し多めに取得してから日付グルーピングして絞る
   const { data } = await sbClient.from('training_logs').select('*').eq('customer_id', currentCustomer.id).order('log_date', { ascending: false }).order('created_at', { ascending: false }).limit(30);
   recentLogs = data || [];
   renderRecent();
@@ -308,7 +307,7 @@ function getTrainerDisplayText(l){
   return '';
 }
 
-// ★ 同じ日付のレコードを1つのグループにまとめる。グループはlog_date降順、日付内はcreated_at昇順で保持
+// ★ 同じ日付のレコードを1つのグループにまとめる
 function groupLogsByDate(logs){
   const map = {};
   const order = [];
@@ -316,7 +315,6 @@ function groupLogsByDate(logs){
     if (!map[l.log_date]) { map[l.log_date] = []; order.push(l.log_date); }
     map[l.log_date].push(l);
   }
-  // created_atで日付内を昇順（入力した順）に並べる
   for (const d of order) {
     map[d].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }
@@ -331,7 +329,6 @@ function renderRecent(){
     '<div style="text-align:center;padding:14px 0;"><span style="color:#FF5A36;font-size:13px;font-weight:700;cursor:pointer;" onclick="openHistory()">すべての記録を見る ›</span></div>';
 }
 
-// ★ 1日分（複数レコードあり得る）をまとめた1枚のカードHTML
 function dayCardHtml(group){
   const d = new Date(group.date + 'T00:00:00');
   const dn = ['日','月','火','水','木','金','土'];
@@ -366,11 +363,9 @@ async function loadHistory(){
   el.innerHTML = groups.map(g => dayCardHtml(g)).join('');
 }
 
-// ★ 指定の日付グループ（複数レコードあり得る）の詳細を開く
 function openDayDetail(date){
   const allLogs = [...recentLogs, ...historyLogs];
   const entries = allLogs.filter(l => l.log_date === date);
-  // 重複除去（recentLogsとhistoryLogsで同じレコードが両方に入っている場合があるため）
   const uniqueEntries = [];
   const seenIds = new Set();
   for (const l of entries) {
@@ -593,7 +588,7 @@ function setValueFromInput(exIdx, sIdx, field, rawValue){
 }
 
 function checkSubmitEnabled(){
-  const ok = selectedExercises.length > 0 && selectedTrainers.length > 0 && selectedSatisfaction !== null;
+  const ok = selectedExercises.length > 0 && selectedSatisfaction !== null;
   document.getElementById('submit-btn').disabled = !ok;
 }
 
@@ -602,7 +597,6 @@ async function submitRecord(){
   const date = document.getElementById('record-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!selectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
-  if (selectedTrainers.length === 0) { alert('担当トレーナー（または自主トレ）を選択してください'); return; }
   if (selectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
