@@ -50,11 +50,9 @@
   .customer-detail-name { font-size: 17px; font-weight: 700; }
   .add-record-btn-admin { background: #FF5A36; color: white; border: none; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
 
-  .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .stats-row { margin-bottom: 16px; }
   .stat-card { background: white; border-radius: 12px; padding: 16px; border: 1px solid #eee; }
   .stat-card-label { font-size: 11px; color: #999; font-weight: 700; margin-bottom: 8px; }
-  .stat-card-value { font-size: 26px; font-weight: 700; color: #FF5A36; }
-  .stat-card-sub { font-size: 11px; color: #aaa; margin-top: 4px; }
   .trainer-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
   .trainer-bar-name { width: 64px; flex-shrink: 0; color: #555; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trainer-bar-track { flex: 1; background: #f0f0f0; border-radius: 99px; height: 8px; overflow: hidden; }
@@ -67,7 +65,6 @@
   .log-date { font-size: 13px; font-weight: 700; color: #FF5A36; }
   .log-trainer { font-size: 11px; color: #999; }
   .log-exercises { font-size: 13px; color: #444; margin-top: 6px; }
-  .log-satisfaction { font-size: 12px; color: #d99a00; margin-top: 4px; }
   .staff-entry-badge { font-size: 10px; color: #1a6fb5; background: #e8f1fc; padding: 2px 8px; border-radius: 99px; font-weight: 700; margin-left: 6px; }
 
   .detail-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; }
@@ -126,8 +123,6 @@
   .rf-pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .rf-pill { padding: 8px 14px; border-radius: 99px; border: 1.5px solid #ddd; background: white; color: #555; font-size: 12px; font-weight: 600; cursor: pointer; }
   .rf-pill.selected { background: #FF5A36; border-color: #FF5A36; color: white; }
-  .rf-star { font-size: 22px; cursor: pointer; color: #ddd; }
-  .rf-star.filled { color: #FFC94A; }
   .rf-exercise-card { background: #f7f7f7; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .rf-exercise-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .rf-exercise-name { font-size: 14px; font-weight: 700; }
@@ -248,10 +243,6 @@
       <select class="rf-add-exercise-select" id="rf-exercise-select" onchange="rfAddExerciseFromSelect()">
         <option value="">＋ 種目を追加...</option>
       </select>
-    </div>
-    <div class="record-form-block">
-      <span class="record-form-label">満足度<span class="required-mark">必須</span></span>
-      <div class="rf-pill-row" id="rf-satisfaction-buttons"></div>
     </div>
     <div class="record-form-block">
       <span class="record-form-label">メモ（任意）</span>
@@ -476,9 +467,6 @@ function renderCustomerStats(){
   const el = document.getElementById('customer-stats-row');
   if (!currentCustomerLogs.length) { el.innerHTML = ''; return; }
 
-  const withScore = currentCustomerLogs.filter(l => l.satisfaction_score != null);
-  const avgScore = withScore.length ? (withScore.reduce((sum, l) => sum + l.satisfaction_score, 0) / withScore.length) : null;
-
   const trainerCounts = {};
   for (const l of currentCustomerLogs) {
     const text = getTrainerDisplayText(l);
@@ -490,13 +478,6 @@ function renderCustomerStats(){
   const totalCount = currentCustomerLogs.length;
   const sortedTrainers = Object.entries(trainerCounts).sort((a, b) => b[1] - a[1]);
   const maxCount = sortedTrainers.length ? sortedTrainers[0][1] : 1;
-
-  const satisfactionCard = `
-    <div class="stat-card">
-      <div class="stat-card-label">平均満足度</div>
-      <div class="stat-card-value">${avgScore != null ? avgScore.toFixed(1) : '—'} <span style="font-size:14px;color:#ccc;">/ 5</span></div>
-      <div class="stat-card-sub">${withScore.length}件の記録から算出</div>
-    </div>`;
 
   const trainerBars = sortedTrainers.map(([name, count]) => {
     const pct = totalCount ? Math.round((count / totalCount) * 100) : 0;
@@ -514,7 +495,7 @@ function renderCustomerStats(){
       ${trainerBars}
     </div>`;
 
-  el.innerHTML = satisfactionCard + trainerCard;
+  el.innerHTML = trainerCard;
 }
 
 function renderCustomerLogs(){
@@ -527,25 +508,20 @@ function renderCustomerLogs(){
     const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
     const allNames = [];
     const allTrainers = new Set();
-    let scoreSum = 0, scoreCount = 0;
     let hasStaffEntry = false;
     for (const l of g.entries) {
       for (const ex of (l.exercises || [])) allNames.push(ex.name);
       const t = getTrainerDisplayText(l);
       if (t) t.split('・').forEach(n => allTrainers.add(n));
-      if (l.satisfaction_score != null) { scoreSum += l.satisfaction_score; scoreCount++; }
       if (l.entered_by_staff) hasStaffEntry = true;
     }
     const namesText = allNames.length ? allNames.join('・') : '（種目なし）';
     const trainerText = [...allTrainers].join('・');
     const countBadge = g.entries.length > 1 ? ` <span style="font-size:10px;color:#999;background:#f0f0f0;padding:2px 8px;border-radius:99px;">${g.entries.length}回に分けて入力</span>` : '';
     const staffBadge = hasStaffEntry ? '<span class="staff-entry-badge">スタッフ入力</span>' : '';
-    const avgScore = scoreCount ? (scoreSum / scoreCount) : null;
-    const starsText = avgScore != null ? '★'.repeat(Math.round(avgScore)) + '☆'.repeat(5 - Math.round(avgScore)) : '—';
     return `<div class="log-card" onclick="openLogDetail('${g.date}')">
       <div class="log-card-top"><span class="log-date">${dateStr}${countBadge}${staffBadge}</span><span class="log-trainer">${trainerText ? '担当: '+trainerText : ''}</span></div>
       <div class="log-exercises">${namesText}</div>
-      <div class="log-satisfaction">満足度: ${starsText}</div>
     </div>`;
   }).join('');
 }
@@ -580,9 +556,6 @@ function renderLogDetailModal(date, entries){
       const selected = trainerText.split('・').includes(n);
       return `<div class="rf-pill${selected?' selected':''}" onclick="editToggleTrainer(${idx}, '${n}')">${n}</div>`;
     }).join('');
-    const starsHtml = [1,2,3,4,5].map(i =>
-      `<span class="rf-star${l.satisfaction_score>=i?' filled':''}" onclick="editSetSatisfaction(${idx}, ${i})">★</span>`
-    ).join('');
     const exHtml = (l.exercises || []).map((ex, exIdx) => {
       const setsHtml = (ex.sets || []).map((s, sIdx) => `
         <div class="rf-set-row">
@@ -604,10 +577,6 @@ function renderLogDetailModal(date, entries){
       <div style="margin-top:8px;">
         <div class="record-form-label">担当トレーナー</div>
         <div class="rf-pill-row">${trainerPills}</div>
-      </div>
-      <div style="margin-top:12px;">
-        <div class="record-form-label">満足度</div>
-        <div class="rf-pill-row">${starsHtml}</div>
       </div>
       <div style="margin-top:12px;">${exHtml}</div>
       <textarea class="rf-memo" style="margin-top:10px;" placeholder="メモ" onchange="editSetMemo(${idx}, this.value)">${l.memo || ''}</textarea>
@@ -637,10 +606,6 @@ function editToggleTrainer(entryIdx, name){
   l.trainer_name = null; // 旧形式フィールドは編集後クリア（trainersに一本化）
   renderLogDetailModal(l.log_date, editingLogEntries);
 }
-function editSetSatisfaction(entryIdx, score){
-  editingLogEntries[entryIdx].satisfaction_score = score;
-  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
-}
 function editSetMemo(entryIdx, value){
   editingLogEntries[entryIdx].memo = value.trim() || null;
 }
@@ -664,7 +629,6 @@ async function editSaveEntry(entryIdx){
   const { error } = await sbClient.from('training_logs').update({
     trainers: l.trainers || [],
     trainer_name: null,
-    satisfaction_score: l.satisfaction_score,
     exercises: l.exercises,
     memo: l.memo
   }).eq('id', l.id);
@@ -686,18 +650,15 @@ async function editDeleteEntry(entryIdx){
 // ===== 記録入力フォーム（スタッフ代理入力） =====
 let rfSelectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
 let rfSelectedTrainers = [];
-let rfSelectedSatisfaction = null;
 
 function openRecordForm(){
   if (!currentCustomer) return;
   rfSelectedExercises = [];
   rfSelectedTrainers = [];
-  rfSelectedSatisfaction = null;
   document.getElementById('rf-date').value = todayStr();
   document.getElementById('rf-date').max = todayStr();
   document.getElementById('rf-memo').value = '';
   rfRenderTrainerButtons();
-  rfRenderSatisfactionButtons();
   rfRenderExerciseCards();
   rfRenderExerciseSelect();
   document.getElementById('record-form-modal-bg').classList.add('active');
@@ -719,16 +680,6 @@ function rfToggleTrainer(name){
   rfRenderTrainerButtons();
   rfCheckSubmitEnabled();
 }
-
-function rfRenderSatisfactionButtons(){
-  const el = document.getElementById('rf-satisfaction-buttons');
-  let html = '';
-  for (let i = 1; i <= 5; i++) {
-    html += `<span class="rf-star${rfSelectedSatisfaction>=i?' filled':''}" onclick="rfSelectSatisfaction(${i})">★</span>`;
-  }
-  el.innerHTML = html;
-}
-function rfSelectSatisfaction(n){ rfSelectedSatisfaction = n; rfRenderSatisfactionButtons(); rfCheckSubmitEnabled(); }
 
 function rfRenderExerciseSelect(){
   const sel = document.getElementById('rf-exercise-select');
@@ -820,7 +771,7 @@ function rfRenderExerciseCards(){
 }
 
 function rfCheckSubmitEnabled(){
-  const ok = rfSelectedExercises.length > 0 && rfSelectedSatisfaction !== null;
+  const ok = rfSelectedExercises.length > 0;
   document.getElementById('rf-submit-btn').disabled = !ok;
 }
 
@@ -829,7 +780,6 @@ async function submitRecordForm(){
   const date = document.getElementById('rf-date').value;
   if (!date) { alert('日付を選択してください'); return; }
   if (!rfSelectedExercises.length) { alert('種目を1つ以上追加してください'); return; }
-  if (rfSelectedSatisfaction === null) { alert('満足度を選択してください'); return; }
   btn.disabled = true; btn.textContent = '送信中...';
   const { error } = await sbClient.from('training_logs').insert({
     customer_id: currentCustomer.id,
@@ -837,7 +787,6 @@ async function submitRecordForm(){
     trainers: rfSelectedTrainers,
     exercises: rfSelectedExercises.map(e => ({ exercise_id: e.exercise_id, name: e.name, sets: e.sets })),
     memo: document.getElementById('rf-memo').value.trim() || null,
-    satisfaction_score: rfSelectedSatisfaction,
     entered_by_staff: true
   });
   btn.disabled = false; btn.textContent = 'この内容で記録する';
