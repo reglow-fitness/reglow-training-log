@@ -565,23 +565,54 @@ function openSingleLogDetail(log){
   renderLogDetailModal(log.log_date, [log]);
 }
 
+let editingLogEntries = []; // 現在モーダルで編集中のentries（参照ではなくディープコピー）
+
 function renderLogDetailModal(date, entries){
+  // ディープコピーして編集用state化（元データを直接触らない）
+  editingLogEntries = JSON.parse(JSON.stringify(entries));
   const dn = ['日','月','火','水','木','金','土'];
   const d = new Date(date + 'T00:00:00');
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
 
-  const blocksHtml = entries.map((l, idx) => {
-    const stars = l.satisfaction_score ? '★'.repeat(l.satisfaction_score) + '☆'.repeat(5 - l.satisfaction_score) : '—';
-    const trainerText = getTrainerDisplayText(l) || '—';
-    const exHtml = (l.exercises || []).map(ex => {
-      const setsStr = (ex.sets || []).map((s,i) => `${i+1}セット目: ${s.weight}kg × ${s.reps}回`).join('<br>');
-      return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div><div class="ex-block-sets">${setsStr}</div></div>`;
+  const blocksHtml = editingLogEntries.map((l, idx) => {
+    const trainerText = getTrainerDisplayText(l);
+    const trainerPills = [...staffList.map(s => s.nickname || s.name), SELF_TRAINING_LABEL].map(n => {
+      const selected = trainerText.split('・').includes(n);
+      return `<div class="rf-pill${selected?' selected':''}" onclick="editToggleTrainer(${idx}, '${n}')">${n}</div>`;
+    }).join('');
+    const starsHtml = [1,2,3,4,5].map(i =>
+      `<span class="rf-star${l.satisfaction_score>=i?' filled':''}" onclick="editSetSatisfaction(${idx}, ${i})">★</span>`
+    ).join('');
+    const exHtml = (l.exercises || []).map((ex, exIdx) => {
+      const setsHtml = (ex.sets || []).map((s, sIdx) => `
+        <div class="rf-set-row">
+          <span style="font-size:11px;color:#999;width:16px;">${sIdx+1}</span>
+          <button class="rf-stepper" onclick="editAdjustSet(${idx},${exIdx},${sIdx},'weight',-2.5)">－</button>
+          <input class="rf-set-value" type="text" inputmode="decimal" value="${s.weight}" onfocus="this.select()" onchange="editSetValueFromInput(${idx},${exIdx},${sIdx},'weight',this.value)">
+          <span class="rf-set-unit">kg</span>
+          <button class="rf-stepper" onclick="editAdjustSet(${idx},${exIdx},${sIdx},'weight',2.5)">＋</button>
+          <button class="rf-stepper" onclick="editAdjustSet(${idx},${exIdx},${sIdx},'reps',-1)">－</button>
+          <input class="rf-set-value" type="text" inputmode="numeric" value="${s.reps}" onfocus="this.select()" onchange="editSetValueFromInput(${idx},${exIdx},${sIdx},'reps',this.value)">
+          <span class="rf-set-unit">回</span>
+          <button class="rf-stepper" onclick="editAdjustSet(${idx},${exIdx},${sIdx},'reps',1)">＋</button>
+        </div>
+      `).join('');
+      return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div>${setsHtml}</div>`;
     }).join('');
     return `<div style="margin-top:${idx > 0 ? '18px' : '0'};padding-top:${idx > 0 ? '14px' : '0'};border-top:${idx > 0 ? '1px solid #eee' : 'none'};">
-      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目の担当' : '担当トレーナー'}</span><span style="font-weight:700;">${trainerText}${l.booking_time ? '（'+l.booking_time+'〜）' : ''}${l.entered_by_staff ? '<span class="staff-entry-badge">スタッフ入力</span>' : ''}</span></div>
-      <div class="detail-row"><span style="color:#888;">満足度</span><span style="color:#d99a00;font-weight:700;">${stars}</span></div>
-      ${exHtml}
-      ${l.memo ? `<div class="memo-block">${l.memo}</div>` : ''}
+      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目' : '記録'}</span><span>${l.booking_time ? l.booking_time+'〜　' : ''}${l.entered_by_staff ? '<span class="staff-entry-badge">スタッフ入力</span>' : ''}</span></div>
+      <div style="margin-top:8px;">
+        <div class="record-form-label">担当トレーナー</div>
+        <div class="rf-pill-row">${trainerPills}</div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="record-form-label">満足度</div>
+        <div class="rf-pill-row">${starsHtml}</div>
+      </div>
+      <div style="margin-top:12px;">${exHtml}</div>
+      <textarea class="rf-memo" style="margin-top:10px;" placeholder="メモ" onchange="editSetMemo(${idx}, this.value)">${l.memo || ''}</textarea>
+      <button class="exercise-row-btn danger" style="width:100%;margin-top:10px;" onclick="editSaveEntry(${idx})">この記録を保存する</button>
+      <button class="exercise-row-btn danger" style="width:100%;margin-top:6px;" onclick="editDeleteEntry(${idx})">この記録を削除する</button>
     </div>`;
   }).join('');
 
@@ -594,6 +625,62 @@ function renderLogDetailModal(date, entries){
 }
 function closeDetailModal(){
   document.getElementById('detail-modal-bg').classList.remove('active');
+}
+
+function editToggleTrainer(entryIdx, name){
+  const l = editingLogEntries[entryIdx];
+  let current = getTrainerDisplayText(l).split('・').filter(Boolean);
+  const i = current.indexOf(name);
+  if (i >= 0) current.splice(i, 1);
+  else current.push(name);
+  l.trainers = current;
+  l.trainer_name = null; // 旧形式フィールドは編集後クリア（trainersに一本化）
+  renderLogDetailModal(l.log_date, editingLogEntries);
+}
+function editSetSatisfaction(entryIdx, score){
+  editingLogEntries[entryIdx].satisfaction_score = score;
+  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
+}
+function editSetMemo(entryIdx, value){
+  editingLogEntries[entryIdx].memo = value.trim() || null;
+}
+function editAdjustSet(entryIdx, exIdx, sIdx, field, delta){
+  const s = editingLogEntries[entryIdx].exercises[exIdx].sets[sIdx];
+  let v = s[field] + delta;
+  v = field === 'weight' ? Math.max(0, Math.round(v * 10) / 10) : Math.max(0, v);
+  s[field] = v;
+  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
+}
+function editSetValueFromInput(entryIdx, exIdx, sIdx, field, rawValue){
+  let v = parseFloat(String(rawValue).replace(/[^0-9.]/g, ''));
+  if (isNaN(v) || v < 0) v = 0;
+  v = field === 'weight' ? Math.round(v * 10) / 10 : Math.round(v);
+  editingLogEntries[entryIdx].exercises[exIdx].sets[sIdx][field] = v;
+  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
+}
+
+async function editSaveEntry(entryIdx){
+  const l = editingLogEntries[entryIdx];
+  const { error } = await sbClient.from('training_logs').update({
+    trainers: l.trainers || [],
+    trainer_name: null,
+    satisfaction_score: l.satisfaction_score,
+    exercises: l.exercises,
+    memo: l.memo
+  }).eq('id', l.id);
+  if (error) { alert('保存に失敗しました'); return; }
+  alert('保存しました');
+  closeDetailModal();
+  await reloadCurrentCustomerLogs();
+}
+
+async function editDeleteEntry(entryIdx){
+  const l = editingLogEntries[entryIdx];
+  if (!confirm('この記録を削除しますか？元に戻せません。')) return;
+  const { error } = await sbClient.from('training_logs').delete().eq('id', l.id);
+  if (error) { alert('削除に失敗しました'); return; }
+  closeDetailModal();
+  await reloadCurrentCustomerLogs();
 }
 
 // ===== 記録入力フォーム（スタッフ代理入力） =====
