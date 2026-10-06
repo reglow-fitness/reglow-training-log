@@ -69,14 +69,14 @@
 
   .detail-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; }
   .detail-modal-bg.active { display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .detail-modal { background: white; border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .detail-modal { background: white; border-radius: 14px; padding: 20px; max-width: 460px; width: 100%; max-height: 88vh; overflow-y: auto; }
   .detail-modal-close { text-align: right; color: #999; font-size: 13px; cursor: pointer; margin-bottom: 8px; }
   .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #f0f0f0; font-size: 13px; }
   .detail-row:first-of-type { border-top: none; }
   .ex-block { background: #f7f7f7; border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
-  .ex-block-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-  .ex-block-sets { font-size: 13px; color: #444; line-height: 1.8; }
-  .memo-block { background: #fff8e1; border-radius: 10px; padding: 12px 14px; margin-top: 10px; font-size: 13px; color: #6a5000; line-height: 1.6; }
+  .ex-block-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .ex-block-name { font-size: 14px; font-weight: 700; }
+  .ex-block-remove { font-size: 11px; color: #999; cursor: pointer; }
 
   .empty-msg { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
   .loading { text-align: center; color: #999; font-size: 13px; padding: 30px 0; }
@@ -220,7 +220,7 @@
   </div>
 </div>
 
-<!-- 記録詳細モーダル -->
+<!-- 記録詳細モーダル（編集可能） -->
 <div class="detail-modal-bg" id="detail-modal-bg" onclick="if(event.target===this)closeDetailModal()">
   <div class="detail-modal" id="detail-modal-content"></div>
 </div>
@@ -321,6 +321,26 @@ function groupLogsByDate(logs){
     map[d].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }
   return order.map(d => ({ date: d, entries: map[d] }));
+}
+
+// 種目選択プルダウンのoption HTML（部位固定順→五十音順）。代理入力フォームと編集モーダルで共用
+function buildExerciseOptionsHtml(){
+  const groups = {};
+  for (const ex of exerciseMaster) {
+    if (!groups[ex.body_part]) groups[ex.body_part] = [];
+    groups[ex.body_part].push(ex);
+  }
+  for (const bp in groups) groups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  const knownParts = BODYPART_ORDER.filter(bp => groups[bp]);
+  const unknownParts = Object.keys(groups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
+  const order = [...knownParts, ...unknownParts];
+  let html = '<option value="">＋ 種目を追加...</option>';
+  for (const bp of order) {
+    html += `<optgroup label="${bp}">`;
+    html += groups[bp].map(ex => `<option value="${ex.id}">${ex.name}</option>`).join('');
+    html += '</optgroup>';
+  }
+  return html;
 }
 
 async function init(){
@@ -489,13 +509,11 @@ function renderCustomerStats(){
     </div>`;
   }).join('');
 
-  const trainerCard = `
+  el.innerHTML = `
     <div class="stat-card">
       <div class="stat-card-label">担当トレーナー内訳（全${totalCount}回）</div>
       ${trainerBars}
     </div>`;
-
-  el.innerHTML = trainerCard;
 }
 
 function renderCustomerLogs(){
@@ -541,14 +559,24 @@ function openSingleLogDetail(log){
   renderLogDetailModal(log.log_date, [log]);
 }
 
-let editingLogEntries = []; // 現在モーダルで編集中のentries（参照ではなくディープコピー）
+// ===== 記録詳細モーダル（編集可能） =====
+let editingLogEntries = []; // 現在モーダルで編集中のentries（ディープコピー）
 
 function renderLogDetailModal(date, entries){
-  // ディープコピーして編集用state化（元データを直接触らない）
+  // 初回オープン時はディープコピーして編集用stateにする（編集操作中の再描画ではそのまま使う）
   editingLogEntries = JSON.parse(JSON.stringify(entries));
+  renderEditModal(date);
+  document.getElementById('detail-modal-bg').classList.add('active');
+}
+
+function renderEditModal(date){
+  const modal = document.getElementById('detail-modal-content');
+  const scrollTop = modal.scrollTop; // 再描画してもスクロール位置を維持
   const dn = ['日','月','火','水','木','金','土'];
   const d = new Date(date + 'T00:00:00');
   const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  const exerciseOptionsHtml = buildExerciseOptionsHtml();
+  const total = editingLogEntries.length;
 
   const blocksHtml = editingLogEntries.map((l, idx) => {
     const trainerText = getTrainerDisplayText(l);
@@ -568,30 +596,42 @@ function renderLogDetailModal(date, entries){
           <input class="rf-set-value" type="text" inputmode="numeric" value="${s.reps}" onfocus="this.select()" onchange="editSetValueFromInput(${idx},${exIdx},${sIdx},'reps',this.value)">
           <span class="rf-set-unit">回</span>
           <button class="rf-stepper" onclick="editAdjustSet(${idx},${exIdx},${sIdx},'reps',1)">＋</button>
+          <span class="rf-set-del" onclick="editRemoveSet(${idx},${exIdx},${sIdx})">✕</span>
         </div>
       `).join('');
-      return `<div class="ex-block"><div class="ex-block-name">${ex.name}</div>${setsHtml}</div>`;
+      return `<div class="ex-block">
+        <div class="ex-block-top">
+          <span class="ex-block-name">${ex.name}</span>
+          <span class="ex-block-remove" onclick="editRemoveExercise(${idx},${exIdx})">種目を削除</span>
+        </div>
+        ${setsHtml}
+        <div class="rf-add-set" onclick="editAddSet(${idx},${exIdx})">＋ セット追加</div>
+      </div>`;
     }).join('');
     return `<div style="margin-top:${idx > 0 ? '18px' : '0'};padding-top:${idx > 0 ? '14px' : '0'};border-top:${idx > 0 ? '1px solid #eee' : 'none'};">
-      <div class="detail-row"><span style="color:#888;">${entries.length > 1 ? (idx+1)+'回目' : '記録'}</span><span>${l.booking_time ? l.booking_time+'〜　' : ''}${l.entered_by_staff ? '<span class="staff-entry-badge">スタッフ入力</span>' : ''}</span></div>
+      <div class="detail-row"><span style="color:#888;">${total > 1 ? (idx+1)+'回目' : '記録'}</span><span>${l.booking_time ? l.booking_time+'〜　' : ''}${l.entered_by_staff ? '<span class="staff-entry-badge">スタッフ入力</span>' : ''}</span></div>
       <div style="margin-top:8px;">
         <div class="record-form-label">担当トレーナー</div>
         <div class="rf-pill-row">${trainerPills}</div>
       </div>
-      <div style="margin-top:12px;">${exHtml}</div>
+      <div style="margin-top:12px;">
+        ${exHtml}
+        <select class="rf-add-exercise-select" style="margin-top:10px;" onchange="editAddExerciseFromSelect(${idx}, this)">${exerciseOptionsHtml}</select>
+      </div>
       <textarea class="rf-memo" style="margin-top:10px;" placeholder="メモ" onchange="editSetMemo(${idx}, this.value)">${l.memo || ''}</textarea>
       <button class="exercise-row-btn danger" style="width:100%;margin-top:10px;" onclick="editSaveEntry(${idx})">この記録を保存する</button>
       <button class="exercise-row-btn danger" style="width:100%;margin-top:6px;" onclick="editDeleteEntry(${idx})">この記録を削除する</button>
     </div>`;
   }).join('');
 
-  document.getElementById('detail-modal-content').innerHTML = `
+  modal.innerHTML = `
     <div class="detail-modal-close" onclick="closeDetailModal()">✕ 閉じる</div>
     <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
     ${blocksHtml}
   `;
-  document.getElementById('detail-modal-bg').classList.add('active');
+  modal.scrollTop = scrollTop;
 }
+
 function closeDetailModal(){
   document.getElementById('detail-modal-bg').classList.remove('active');
 }
@@ -604,7 +644,7 @@ function editToggleTrainer(entryIdx, name){
   else current.push(name);
   l.trainers = current;
   l.trainer_name = null; // 旧形式フィールドは編集後クリア（trainersに一本化）
-  renderLogDetailModal(l.log_date, editingLogEntries);
+  renderEditModal(l.log_date);
 }
 function editSetMemo(entryIdx, value){
   editingLogEntries[entryIdx].memo = value.trim() || null;
@@ -614,18 +654,53 @@ function editAdjustSet(entryIdx, exIdx, sIdx, field, delta){
   let v = s[field] + delta;
   v = field === 'weight' ? Math.max(0, Math.round(v * 10) / 10) : Math.max(0, v);
   s[field] = v;
-  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
+  renderEditModal(editingLogEntries[entryIdx].log_date);
 }
 function editSetValueFromInput(entryIdx, exIdx, sIdx, field, rawValue){
   let v = parseFloat(String(rawValue).replace(/[^0-9.]/g, ''));
   if (isNaN(v) || v < 0) v = 0;
   v = field === 'weight' ? Math.round(v * 10) / 10 : Math.round(v);
   editingLogEntries[entryIdx].exercises[exIdx].sets[sIdx][field] = v;
-  renderLogDetailModal(editingLogEntries[entryIdx].log_date, editingLogEntries);
+  renderEditModal(editingLogEntries[entryIdx].log_date);
+}
+// ★ セット追加（直前のセットと同じ重量・回数で追加）
+function editAddSet(entryIdx, exIdx){
+  const sets = editingLogEntries[entryIdx].exercises[exIdx].sets;
+  const last = sets[sets.length - 1] || { weight: 20, reps: 10 };
+  sets.push({ weight: last.weight, reps: last.reps });
+  renderEditModal(editingLogEntries[entryIdx].log_date);
+}
+// ★ セット削除（最後の1セットを消すと種目ごと削除）
+function editRemoveSet(entryIdx, exIdx, sIdx){
+  const ex = editingLogEntries[entryIdx].exercises[exIdx];
+  if (ex.sets.length <= 1) { editRemoveExercise(entryIdx, exIdx); return; }
+  ex.sets.splice(sIdx, 1);
+  renderEditModal(editingLogEntries[entryIdx].log_date);
+}
+// ★ 種目追加（プルダウンから選択）
+function editAddExerciseFromSelect(entryIdx, selectEl){
+  const id = selectEl.value;
+  if (!id) return;
+  const ex = exerciseMaster.find(e => e.id === id);
+  if (!ex) return;
+  const l = editingLogEntries[entryIdx];
+  if (!Array.isArray(l.exercises)) l.exercises = [];
+  l.exercises.push({ exercise_id: ex.id, name: ex.name, sets: [{ weight: 20, reps: 10 }] });
+  renderEditModal(l.log_date);
+}
+// ★ 種目削除
+function editRemoveExercise(entryIdx, exIdx){
+  const l = editingLogEntries[entryIdx];
+  l.exercises.splice(exIdx, 1);
+  renderEditModal(l.log_date);
 }
 
 async function editSaveEntry(entryIdx){
   const l = editingLogEntries[entryIdx];
+  if (!l.exercises || !l.exercises.length) {
+    alert('種目が1つもありません。種目を追加するか、「この記録を削除する」を使ってください。');
+    return;
+  }
   const { error } = await sbClient.from('training_logs').update({
     trainers: l.trainers || [],
     trainer_name: null,
@@ -682,23 +757,7 @@ function rfToggleTrainer(name){
 }
 
 function rfRenderExerciseSelect(){
-  const sel = document.getElementById('rf-exercise-select');
-  const groups = {};
-  for (const ex of exerciseMaster) {
-    if (!groups[ex.body_part]) groups[ex.body_part] = [];
-    groups[ex.body_part].push(ex);
-  }
-  for (const bp in groups) groups[bp].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-  const knownParts = BODYPART_ORDER.filter(bp => groups[bp]);
-  const unknownParts = Object.keys(groups).filter(bp => !BODYPART_ORDER.includes(bp)).sort((a, b) => a.localeCompare(b, 'ja'));
-  const order = [...knownParts, ...unknownParts];
-  let html = '<option value="">＋ 種目を追加...</option>';
-  for (const bp of order) {
-    html += `<optgroup label="${bp}">`;
-    html += groups[bp].map(ex => `<option value="${ex.id}">${ex.name}</option>`).join('');
-    html += '</optgroup>';
-  }
-  sel.innerHTML = html;
+  document.getElementById('rf-exercise-select').innerHTML = buildExerciseOptionsHtml();
 }
 function rfAddExerciseFromSelect(){
   const sel = document.getElementById('rf-exercise-select');
