@@ -74,6 +74,7 @@
   .detail-row:first-of-type { border-top: none; }
   .error-box { margin: 14px; background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 12px; padding: 16px; font-size: 13px; color: #e78; line-height: 1.7; text-align: center; }
   .delete-log-btn { display: block; margin: 10px 0 0; background: none; border: 1.5px solid #4a2a2a; color: #e74c3c; border-radius: 10px; padding: 10px; font-size: 12px; font-weight: 600; width: 100%; cursor: pointer; }
+  .edit-log-btn { display: block; margin: 12px 0 0; background: none; border: 1.5px solid #FF5A36; color: #FF5A36; border-radius: 10px; padding: 10px; font-size: 13px; font-weight: 700; width: 100%; cursor: pointer; }
   .record-card { background: #1c1c1c; margin: 0 14px 10px; border-radius: 14px; padding: 14px 16px; border: 1px solid #262626; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
   .record-card-name { font-size: 15px; font-weight: 700; color: #fff; }
   .record-card-part { font-size: 11px; color: #777; margin-top: 2px; }
@@ -92,6 +93,13 @@
   .day-entry-block:first-child { border-top: none; padding-top: 0; margin-top: 0; }
   .day-entry-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .day-entry-trainer { font-size: 12px; color: #999; font-weight: 700; }
+  .edit-ex-block { background: #141414; border: 1px solid #262626; border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+  .edit-ex-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .edit-ex-name { font-size: 15px; font-weight: 700; color: #fff; }
+  .edit-select { width: 100%; margin-top: 10px; padding: 12px; border-radius: 10px; border: 1.5px dashed #444; background: #111; color: #ccc; font-size: 14px; font-family: inherit; }
+  .edit-save-btn { display: block; margin: 14px 0 0; background: #FF5A36; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 14px; font-weight: 700; width: 100%; cursor: pointer; }
+  .edit-save-btn:disabled { background: #333; color: #666; }
+  .edit-cancel-btn { display: block; margin: 8px 0 0; background: none; border: 1.5px solid #333; color: #999; border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; width: 100%; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -162,6 +170,11 @@
   <div class="pb"></div>
 </div>
 
+<div class="screen" id="screen-edit">
+  <div id="edit-content"></div>
+  <div class="pb"></div>
+</div>
+
 <div class="screen" id="screen-exercise-records">
   <div id="exercise-records-content"><div class="loading"><div class="loading-spinner"></div>読み込み中...</div></div>
   <div class="pb"></div>
@@ -197,6 +210,10 @@ let selectedExercises = []; // [{exercise_id, name, sets:[{weight,reps}]}]
 let selectedTrainers = [];       // 空配列でもOK（任意）。'SORA' や '自主トレ' などが複数入る
 let matchedBookingTime = null;   // その日の予約時刻（HH:MM）、なければnull
 let screenHistoryStack = [];
+
+// 編集中の1レコード（ディープコピー）と、その日付
+let editingEntry = null;
+let editingDate = null;
 
 function todayStr(){
   const d = new Date();
@@ -355,17 +372,22 @@ async function loadHistory(){
   el.innerHTML = groups.map(g => dayCardHtml(g)).join('');
 }
 
-function openDayDetail(date){
-  const allLogs = [...recentLogs, ...historyLogs];
-  const entries = allLogs.filter(l => l.log_date === date);
-  const uniqueEntries = [];
-  const seenIds = new Set();
-  for (const l of entries) {
-    if (!seenIds.has(l.id)) { seenIds.add(l.id); uniqueEntries.push(l); }
+// 直近＋履歴をマージして重複を除いたログ一覧
+function getAllKnownLogs(){
+  const all = [...recentLogs, ...historyLogs];
+  const seen = new Set();
+  const uniq = [];
+  for (const l of all) {
+    if (!seen.has(l.id)) { seen.add(l.id); uniq.push(l); }
   }
-  uniqueEntries.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  if (!uniqueEntries.length) return;
-  renderDayDetail(date, uniqueEntries);
+  return uniq;
+}
+
+function openDayDetail(date){
+  const entries = getAllKnownLogs().filter(l => l.log_date === date);
+  entries.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (!entries.length) return;
+  renderDayDetail(date, entries);
   goScreen('screen-detail');
 }
 
@@ -387,6 +409,7 @@ function renderDayDetail(date, entries){
       </div>
       ${exHtml}
       ${l.memo ? `<div style="margin-top:10px;font-size:13px;color:#ccc;background:#111;border-radius:8px;padding:10px 12px;line-height:1.6;">${l.memo}</div>` : ''}
+      <button class="edit-log-btn" onclick="startEditEntry('${l.id}')">${entries.length > 1 ? 'この回の記録を編集する' : 'この記録を編集する'}</button>
       <button class="delete-log-btn" onclick="deleteLog('${l.id}', '${date}')">${entries.length > 1 ? 'この回の記録だけ削除する' : 'この記録を削除する'}</button>
     </div>`;
   }).join('');
@@ -408,12 +431,190 @@ async function deleteLog(id, date){
   allLogsForStats = null; // キャッシュを無効化（次回の種目別記録で再取得）
   exerciseStatsMap = null;
   // ★ 同じ日付にまだ他の記録が残っていればその日の詳細を再表示、なければ一覧に戻る
-  const remaining = [...recentLogs, ...historyLogs].filter(l => l.log_date === date);
+  const remaining = getAllKnownLogs().filter(l => l.log_date === date);
   if (remaining.length) {
-    openDayDetail(date);
+    renderDayDetail(date, remaining.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
   } else {
     goBack();
   }
+}
+
+// ===== 既存記録の編集 =====
+function startEditEntry(id){
+  const src = getAllKnownLogs().find(l => l.id === id);
+  if (!src) return;
+  editingEntry = JSON.parse(JSON.stringify(src)); // 元データに触れないようディープコピー
+  editingDate = src.log_date;
+  if (!Array.isArray(editingEntry.exercises)) editingEntry.exercises = [];
+  renderEditScreen();
+  goScreen('screen-edit');
+}
+
+function buildEditExerciseOptionsHtml(){
+  let html = '<option value="">＋ 種目を追加...</option>';
+  for (const bp of bodyPartOrderList) {
+    html += `<optgroup label="${bp}">`;
+    html += (bodyPartGroups[bp] || []).map(ex => `<option value="${ex.id}">${ex.name}</option>`).join('');
+    html += '</optgroup>';
+  }
+  return html;
+}
+
+function renderEditScreen(){
+  if (!editingEntry) return;
+  const scrollY = window.scrollY; // 再描画してもスクロール位置を維持
+  const l = editingEntry;
+  const d = new Date(l.log_date + 'T00:00:00');
+  const dn = ['日','月','火','水','木','金','土'];
+  const dateStr = `${d.getMonth()+1}月${d.getDate()}日（${dn[d.getDay()]}）`;
+  const currentTrainers = getTrainerDisplayText(l).split('・').filter(Boolean);
+  const trainerPills = [...staffList.map(s => s.nickname || s.name), SELF_TRAINING_LABEL].map(n =>
+    `<div class="pill-btn${currentTrainers.includes(n)?' selected':''}" onclick="editToggleTrainer('${n}')">${n}</div>`
+  ).join('');
+
+  const exHtml = l.exercises.map((ex, exIdx) => {
+    const setsHtml = (ex.sets || []).map((s, sIdx) => `
+      <div class="set-row">
+        <span class="set-num">${sIdx+1}</span>
+        <div class="set-field">
+          <button class="stepper-btn" onclick="editAdjustSet(${exIdx},${sIdx},'weight',-2.5)">－</button>
+          <input class="set-value-input" type="text" inputmode="decimal" value="${s.weight}"
+            onfocus="this.select()"
+            onchange="editSetValueFromInput(${exIdx},${sIdx},'weight',this.value)">
+          <span class="set-unit">kg</span>
+          <button class="stepper-btn" onclick="editAdjustSet(${exIdx},${sIdx},'weight',2.5)">＋</button>
+        </div>
+        <div class="set-field">
+          <button class="stepper-btn" onclick="editAdjustSet(${exIdx},${sIdx},'reps',-1)">－</button>
+          <input class="set-value-input" type="text" inputmode="numeric" value="${s.reps}"
+            onfocus="this.select()"
+            onchange="editSetValueFromInput(${exIdx},${sIdx},'reps',this.value)">
+          <span class="set-unit">回</span>
+          <button class="stepper-btn" onclick="editAdjustSet(${exIdx},${sIdx},'reps',1)">＋</button>
+        </div>
+        <span class="set-del" onclick="editRemoveSet(${exIdx},${sIdx})">✕</span>
+      </div>
+    `).join('');
+    return `<div class="edit-ex-block">
+      <div class="edit-ex-top">
+        <span class="edit-ex-name">${ex.name}</span>
+        <span class="exercise-remove" onclick="editRemoveExercise(${exIdx})">種目を削除</span>
+      </div>
+      ${setsHtml}
+      <div class="add-set-btn" onclick="editAddSet(${exIdx})">＋ セット追加</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('edit-content').innerHTML = `
+    <div class="form-block">
+      <div class="detail-row"><span style="color:#888;">日付</span><span style="font-weight:700;">${dateStr}</span></div>
+      ${l.booking_time ? `<div class="booking-time-badge">📅 予約時間：${l.booking_time}〜</div>` : ''}
+    </div>
+    <div class="form-block">
+      <span class="form-label">担当トレーナー（自主トレも含め複数選択可・任意）</span>
+      <div class="trainer-buttons">${trainerPills}</div>
+    </div>
+    <div class="form-block">
+      <span class="form-label">種目</span>
+      ${exHtml || '<div style="color:#666;font-size:13px;">種目がありません</div>'}
+      <select class="edit-select" onchange="editAddExerciseFromSelect(this)">${buildEditExerciseOptionsHtml()}</select>
+    </div>
+    <div class="form-block">
+      <span class="form-label">メモ（任意）</span>
+      <textarea class="memo-input" onchange="editSetMemo(this.value)" placeholder="体調やフォームの気づきなど">${l.memo || ''}</textarea>
+    </div>
+    <div style="margin:20px 14px 0;">
+      <button class="edit-save-btn" id="edit-save-btn" onclick="saveEditedEntry()" ${l.exercises.length ? '' : 'disabled'}>この内容で保存する</button>
+      <button class="edit-cancel-btn" onclick="cancelEdit()">キャンセル</button>
+    </div>
+  `;
+  window.scrollTo(0, scrollY);
+}
+
+function editToggleTrainer(name){
+  const l = editingEntry;
+  let current = getTrainerDisplayText(l).split('・').filter(Boolean);
+  const i = current.indexOf(name);
+  if (i >= 0) current.splice(i, 1);
+  else current.push(name);
+  l.trainers = current;
+  l.trainer_name = null; // 旧形式フィールドは編集後クリア（trainersに一本化）
+  renderEditScreen();
+}
+function editSetMemo(value){
+  editingEntry.memo = value.trim() || null;
+}
+function editAdjustSet(exIdx, sIdx, field, delta){
+  const s = editingEntry.exercises[exIdx].sets[sIdx];
+  let v = s[field] + delta;
+  v = field === 'weight' ? Math.max(0, Math.round(v * 10) / 10) : Math.max(0, v);
+  s[field] = v;
+  renderEditScreen();
+}
+function editSetValueFromInput(exIdx, sIdx, field, rawValue){
+  let v = parseFloat(String(rawValue).replace(/[^0-9.]/g, ''));
+  if (isNaN(v) || v < 0) v = 0;
+  v = field === 'weight' ? Math.round(v * 10) / 10 : Math.round(v);
+  editingEntry.exercises[exIdx].sets[sIdx][field] = v;
+  renderEditScreen();
+}
+function editAddSet(exIdx){
+  const sets = editingEntry.exercises[exIdx].sets;
+  const last = sets[sets.length - 1] || { weight: 20, reps: 10 };
+  sets.push({ weight: last.weight, reps: last.reps });
+  renderEditScreen();
+}
+function editRemoveSet(exIdx, sIdx){
+  const ex = editingEntry.exercises[exIdx];
+  if (ex.sets.length <= 1) { editRemoveExercise(exIdx); return; }
+  ex.sets.splice(sIdx, 1);
+  renderEditScreen();
+}
+function editAddExerciseFromSelect(selectEl){
+  const id = selectEl.value;
+  if (!id) return;
+  const ex = exerciseMaster.find(e => e.id === id);
+  if (!ex) return;
+  editingEntry.exercises.push({ exercise_id: ex.id, name: ex.name, sets: [{ weight: 20, reps: 10 }] });
+  renderEditScreen();
+}
+function editRemoveExercise(exIdx){
+  editingEntry.exercises.splice(exIdx, 1);
+  renderEditScreen();
+}
+
+async function saveEditedEntry(){
+  const l = editingEntry;
+  if (!l || !l.exercises.length) { alert('種目が1つもありません。種目を追加してください。'); return; }
+  const btn = document.getElementById('edit-save-btn');
+  btn.disabled = true; btn.textContent = '保存中...';
+  const { error } = await sbClient.from('training_logs').update({
+    trainers: l.trainers || [],
+    trainer_name: null,
+    exercises: l.exercises,
+    memo: l.memo
+  }).eq('id', l.id).eq('customer_id', currentCustomer.id);
+  if (error) {
+    btn.disabled = false; btn.textContent = 'この内容で保存する';
+    alert('保存に失敗しました。もう一度お試しください。');
+    return;
+  }
+  // 最新データを読み直して、その日の詳細画面へ戻る
+  await loadRecent();
+  await loadHistory();
+  allLogsForStats = null;
+  exerciseStatsMap = null;
+  const date = editingDate;
+  editingEntry = null;
+  const entries = getAllKnownLogs().filter(x => x.log_date === date).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  renderDayDetail(date, entries);
+  goBack(); // 編集画面 → 詳細画面（スタック上の直前）
+}
+
+function cancelEdit(){
+  if (editingEntry && !confirm('編集内容は保存されません。キャンセルしますか？')) return;
+  editingEntry = null;
+  goBack();
 }
 
 // ===== 新規記録フォーム =====
@@ -432,6 +633,12 @@ async function startNewRecord(){
   await checkBookingForDate(date);
   // 自己ベストバッジ表示のため裏で統計を読み込んでおく
   await ensureExerciseStats();
+}
+
+async function ensureExerciseStats(){
+  const logs = await loadAllLogsForStats();
+  exerciseStatsMap = buildExerciseStats(logs);
+  renderExerciseCards();
 }
 
 // ★ 日付が変更されたとき、その日の予約を再チェックする
@@ -747,7 +954,7 @@ function goHome(){
   window.scrollTo(0,0);
 }
 function updateHeader(id){
-  const titles = { 'screen-home':'トレーニング記録', 'screen-record':'記録を追加', 'screen-picker':'種目を選ぶ', 'screen-history':'記録一覧', 'screen-detail':'記録の詳細', 'screen-exercise-records':'種目別記録', 'screen-exercise-detail':'種目の記録推移' };
+  const titles = { 'screen-home':'トレーニング記録', 'screen-record':'記録を追加', 'screen-picker':'種目を選ぶ', 'screen-history':'記録一覧', 'screen-detail':'記録の詳細', 'screen-edit':'記録を編集', 'screen-exercise-records':'種目別記録', 'screen-exercise-detail':'種目の記録推移' };
   document.getElementById('header-title').textContent = titles[id] || 'トレーニング記録';
   document.getElementById('header-back').style.visibility = id === 'screen-home' ? 'hidden' : 'visible';
 }
